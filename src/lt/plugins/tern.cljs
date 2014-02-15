@@ -246,7 +246,8 @@
                         (object/raise editor :editor.javascript.hints.update!))
                       (if-let [js-hints (::hints @editor)]
                         js-hints
-                        hints)))
+                        [#js {:completion "placeholder1"} ;; Hack until we can figure out how to initialize autocompletion when result returns or clear!
+                         #js {:completion "placeholder2"}])))
 
 (behavior ::line-change
           :triggers #{:line-change}

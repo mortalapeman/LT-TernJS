@@ -26,4 +26,5 @@
                  :lt.plugins.tern/watched.create
                  :lt.plugins.tern/reset-on-update
                  ]
-     }}
+    }
+ :- {:editor.javascript [:lt.plugins.auto-complete/textual-hints]}}
