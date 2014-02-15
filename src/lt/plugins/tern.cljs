@@ -184,8 +184,7 @@
 (cmd/command {:command :tern.reset
               :desc "Tern: Reset the Tern javascript server"
               :exec (fn []
-                      (object/raise tern-client :kill)
-                      (object/raise tern-client :start-server))})
+                      (object/raise tern-client :kill))})
 
 ;;****************************************************
 ;; Workspace Sync
@@ -211,7 +210,8 @@
 (behavior ::reset-on-update
           :triggers #{:updated :refresh}
           :reaction (fn [_]
-                      (cmd/exec! :tern.reset)))
+                      (when (:connected @tern-client)
+                        (cmd/exec! :tern.reset))))
 
 ;;****************************************************
 ;; Autocomplete
