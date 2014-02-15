@@ -1,0 +1,6 @@
+{:name "TernJS"
+ :version "0.0.1"
+ :author "Eric Pritchett"
+ :source ""
+ :desc "Provides inteligent auto-complete, inline docs and jump to definition for javascript files in Light Table."
+ :behaviors "ternjs.behaviors"}

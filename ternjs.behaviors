@@ -1,0 +1,29 @@
+{:+ {:app [(:lt.objs.plugins/load-js "ternjs_compiled.js")]
+     :editor.javascript [:lt.plugins.doc/editor.doc.show!
+                         :lt.plugins.tern/finish-update-hints
+                         :lt.plugins.tern/trigger-update-hints
+                         :lt.plugins.tern/use-tern-hints
+                         :lt.plugins.tern/javascript-doc
+                         :lt.plugins.tern/print-javascript-doc
+                         :lt.plugins.tern/jump-to-definition
+                         (:lt.objs.editor/on-change :tern.send-current-document)
+                         ]
+     :hinter [:lt.plugins.tern/clear-token
+              :lt.plugins.tern/line-change
+              ]
+     :tern.client [:lt.objs.clients/handle-message
+                   :lt.objs.clients/on-connect-drain
+                   :lt.objs.clients/try-send
+                   :lt.objs.clients/queue!
+                   :lt.plugins.tern/send
+                   :lt.plugins.tern/start-server
+                   :lt.plugins.tern/error
+                   :lt.plugins.tern/kill
+                   :lt.plugins.tern/disconnect
+                   :lt.plugins.tern/try-send
+                   ]
+     :workspace [:lt.plugins.tern/watched.delete
+                 :lt.plugins.tern/watched.create
+                 :lt.plugins.tern/reset-on-update
+                 ]
+     }}
