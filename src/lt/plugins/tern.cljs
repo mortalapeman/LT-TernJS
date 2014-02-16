@@ -246,8 +246,10 @@
                         (object/raise editor :editor.javascript.hints.update!))
                       (if-let [js-hints (::hints @editor)]
                         js-hints
-                        [#js {:completion "placeholder1"} ;; Hack until we can figure out how to initialize autocompletion when result returns or clear!
-                         #js {:completion "placeholder2"}])))
+                        ;; If tern hasn't responded with hints, we still need to return something or else
+                        ;; the autocomplete box will be inactive when a response comes from the server.
+                        (:lt.plugins.auto-complete/hints @editor))))
+
 
 (behavior ::line-change
           :triggers #{:line-change}
