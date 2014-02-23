@@ -75,6 +75,7 @@ process.on('message', function(msg) {
       data.payload.forEach(function(x) {
         server.addFile(x);
       });
+      server.flush();
       send(null, {}, msg);
       break;
     case 'deletefiles':
