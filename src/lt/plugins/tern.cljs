@@ -50,16 +50,78 @@
    :text (ed/->val editor)
    :type "full"})
 
+(defn indent [s]
+  (->> (map #(re-find #"[ \t]" %) s)
+       (take-while (comp true? boolean))
+       count))
+
+(defn jsfn? [s]
+  (boolean
+   (re-find #"function" s)))
+
+(defn back-search [strs max-indent]
+  (letfn [(line-info [i v]
+                {:index i
+                 :indent (indent v)
+                 :jsfn? (jsfn? v)})
+          (match? [{:keys [jsfn? indent]}]
+                  (and jsfn? (>= max-indent indent)))]
+    (->> (map-indexed line-info strs)
+         (filter match?)
+         first)))
+
+(defn forward-search [strs max-indent]
+  (letfn [(line-info [i v]
+                     {:index i
+                      :blockend? (>= max-indent (indent v))})]
+    (->> (map-indexed line-info strs)
+         (filter :blockend?)
+         first)))
+
+(defn partial-range [editor]
+  (let [{:keys [line] :as pos} (assoc-in (ed/->cursor editor) [:ch] 0)
+        min-line (max 0 (- line 50))
+        max-line (min (.lastLine (ed/->cm-ed editor)) (+ line 20))
+        text (ed/range editor
+                       (assoc-in pos [:line] min-line)
+                       (assoc-in pos [:line] max-line))
+        [b f] (partition-all (- line min-line) (.split text "\n"))
+        max-indent (indent (first f))
+        back-result (back-search (reverse b) max-indent)
+        back-index (or (:index back-result) 49)
+        forward-index (or (:index (forward-search f (:indent back-result))) 20)]
+    {:from {:line (max 0 (- line back-index 1))
+            :ch 0}
+     :to   {:line (min (+ line forward-index) max-line)
+            :ch 0}}))
+
+(defn ed->partfile [editor]
+  (let [{:keys [from to]} (partial-range editor)
+        offset-line (max 0 (:line from))]
+    {:name (get-in @editor [:info :path])
+     :offsetLines offset-line
+     :text (ed/range editor from to)
+     :type "part"}))
+
 (defn ed->mime [editor]
   (-> @editor :doc deref :mime))
+
+(defn ed->line-count [editor]
+  (ed/line-count (ed/->cm-ed editor)))
 
 (defn ed->req
   ([editor type]
    (ed->req editor type {}))
   ([editor type query-ops]
-   (tern-msg :request
-             {:query (ed->query editor type query-ops)
-              :files [(ed->fullfile editor)]})))
+   (let [req {:query (ed->query editor type query-ops)
+              :files [(if (> (ed->line-count editor) 250)
+                        (ed->partfile editor)
+                        (ed->fullfile editor))]}]
+     (if-let [offset (-> req :files first :offsetLines)]
+       (tern-msg :request (-> req
+                              (update-in [:query :end :line] - offset)
+                              (assoc-in [:query :file] "#0")))
+       (tern-msg :request req)))))
 
 (defn id [msg]
   (let [v (.-cb msg)]
