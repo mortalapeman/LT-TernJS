@@ -15,7 +15,6 @@ The listed features are only a subset of what Tern is capable of, more to come.
 * All json defs are loaded by default, this means you will get auto-completion for jQuery even if you don't have jQuery in your project.
 * Same goes for plugins, you will get auto-completion for AngularJS even if you haven't don't have it in your workspace.
 * No distinction between browser and NodeJS environment, a side effect of blindly loading all plugins.
-* All files are sent to the server with their full text. Tern supports sending partial files so it can respond quickly, but this feature hasn't been implemented yet.
 
 All these problems will be addressed in future releases, feedback is appreciated!
 
