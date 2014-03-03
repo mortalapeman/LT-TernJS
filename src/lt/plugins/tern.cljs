@@ -277,22 +277,25 @@
           :reaction (fn [this]
                       (let [cp (js/require "child_process")
                             worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
-                            data (clj->js (tern-msg :addfiles (all-js-files lt.objs.workspace/current-ws)))
+                            send-cb (fn [e paths]
+                                      (if e
+                                        (object/raise this :kill)
+                                        (.send worker #js {:data (clj->js (tern-msg :addfiles paths))
+                                                           :command "init"})))
                             dis (fn [code signal]
                                   (object/raise this :kill))
                             msg (fn [m]
                                   (cond
                                    (ignore? m) nil
+                                   (err? m) (object/raise this :error m)
                                    (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
                                    (init? m) (do
                                                (notifos/done-working (str "Connected to: " (:name @this)))
-                                               (object/raise this :connect this))
-                                   (err? m) (object/raise this :error m)))]
+                                               (object/raise this :connect this))))]
                         (.on worker "message" msg)
                         (.on worker "disconnect" dis)
                         (.on worker "exit" dis)
-                        (.send worker #js {:data data
-                                           :command "init"})
+                        (current-ws-jsfiles send-cb)
                         (object/merge! this {::worker worker}))))
 
 (behavior ::error
@@ -361,7 +364,9 @@
 (defn update-server [this action path]
   (when (:connected @this)
     (cond
-     (files/dir? path)  (clients/send this :ignore (tern-msg action (dir->jsfiles path)))
+     (files/dir? path) (dir->jsfiles path (fn [e paths]
+                                            (when-not e
+                                              (clients/send this :ignore (tern-msg action paths)))))
      (and (files/file? path) (jsfile? path)) (clients/send this :ignore (tern-msg action [path])))))
 
 (behavior ::watched.create
