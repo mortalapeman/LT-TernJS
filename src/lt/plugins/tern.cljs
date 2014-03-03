@@ -10,6 +10,7 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.notifos :as notifos]
             [lt.objs.sidebar.command :as cmd]
+            [lt.objs.workspace :as workspace]
             [lt.util.load :as load]
             [lt.util.cljs :refer [js->clj]])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -21,16 +22,115 @@
 (def js-mime (delay (-> @files/files-obj :types (get "Javascript") :mime)))
 (def js-ext #"\.js$")
 
+;;****************************************************
+;; File System
+;;****************************************************
+
+(def fs (js/require "fs"))
+
+(defn readdir [dir cb]
+  (fs.readdir dir cb))
+
+(defn stat [path cb]
+  (fs.stat path cb))
+
+(defn gitdir? [p]
+  (= ".git" (files/basename p)))
+
+(defn nodemoduledir? [p]
+  (= "node_modules" (files/basename p)))
+
 (defn jsfile? [p]
-  (re-find js-ext p))
+  (boolean
+   (re-find js-ext p)))
 
-(defn all-js-files [ws]
-  (let [ds (:folders @ws)
-        fs (filter jsfile? (:files @ws))]
-    (concat fs (mapcat #(files/filter-walk jsfile? %) ds))))
+(defn plugin-jsfile? [p]
+  (boolean
+   (and (jsfile? p)
+        (re-find #"_compiled" p))))
 
-(defn dir->jsfiles [dir]
-  (files/filter-walk jsfile? dir))
+(defmulti async-filter-walk
+  (fn [arg ignore? done] (string? arg)))
+
+(defmethod async-filter-walk true
+  [dir ignore? done]
+  (let [results (atom [])
+        error (atom nil)
+        handle-error (fn [e]
+                       (when-not @error
+                         (swap! error (constantly e))
+                         (done e nil)))
+        recur-cb (fn [pending done]
+                   (fn [e r]
+                     (if e
+                       (handle-error e)
+                       (do
+                         (swap! results concat r)
+                         (swap! pending dec)
+                         (when (= 0 @pending)
+                           (done nil @results))))))
+        stat-cb (fn [pending done p]
+                  (fn [e stats]
+                    (cond
+                     e (handle-error e)
+                     (ignore? p stats) (do
+                                         (swap! pending dec)
+                                         (when (= 0 @pending)
+                                           (done nil @results)))
+                     (.isDirectory stats) (async-filter-walk p ignore? (recur-cb pending done))
+                     :else (do
+                             (swap! results conj p)
+                             (swap! pending dec)
+                             (when (= 0 @pending)
+                               (done nil @results))))))]
+    (readdir dir (fn [e paths]
+                   (cond
+                    e (handle-error e)
+                    (= 0 (.-length paths)) (done nil @results)
+                    :else (let [pending (atom (.-length paths))]
+                            (doseq [x paths
+                                    :let [p (files/join dir x)]]
+                              (stat p (stat-cb pending done p)))))))))
+
+(defmethod async-filter-walk false
+  [dirs ignore? done]
+  (let [pending (atom (count dirs))
+        results (atom [])
+        error (atom nil)
+        cb (fn [e r]
+             (swap! pending dec)
+             (if e
+               (do
+                 (when-not @error
+                   (done e nil)
+                   (swap! error (constantly e))))
+               (do
+                 (swap! results concat r)
+                 (when (= 0 @pending)
+                   (done nil @results)))))]
+    (doseq [p dirs]
+      (async-filter-walk p ignore? cb))))
+
+(defn tern-ignore [p stats]
+  (if (.isDirectory stats)
+    (or (gitdir? p)
+        (nodemoduledir? p))
+    (or (plugin-jsfile? p)
+        (not (jsfile? p)))))
+
+(defn current-ws-jsfiles [done]
+  (let [ws @workspace/current-ws
+        ds (:folders ws)
+        fs (filter jsfile? (:files ws))]
+    (async-filter-walk ds tern-ignore (fn [e r]
+                                        (done e (concat fs r))))))
+
+(defn dir->jsfiles [dir done]
+  (async-filter-walk dir tern-ignore done))
+
+;;****************************************************
+;; Query and Request Helpers
+;;****************************************************
 
 (defn tern-msg [t d]
   {:type (name t)
