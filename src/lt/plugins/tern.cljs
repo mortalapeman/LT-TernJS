@@ -58,7 +58,7 @@
         error (atom nil)
         handle-error (fn [e]
                        (when-not @error
-                         (swap! error (constantly e))
+                         (reset! error e)
                          (done e nil)))
         recur-cb (fn [pending done]
                    (fn [e r]
@@ -103,7 +103,7 @@
                (do
                  (when-not @error
                    (done e nil)
-                   (swap! error (constantly e))))
+                   (reset! error e)))
                (do
                  (swap! results concat r)
                  (when (= 0 @pending)
