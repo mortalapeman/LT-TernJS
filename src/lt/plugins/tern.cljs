@@ -175,25 +175,27 @@
                      {:index i
                       :blockend? (>= max-indent (indent v))})]
     (->> (map-indexed line-info strs)
+         (drop 1)
          (filter :blockend?)
          first)))
 
 (defn partial-range [editor]
-  (let [{:keys [line] :as pos} (assoc-in (ed/->cursor editor) [:ch] 0)
+  (let [{:keys [line ch]} (ed/->cursor editor)
         min-line (max 0 (- line 50))
         max-line (min (.lastLine (ed/->cm-ed editor)) (+ line 20))
         text (ed/range editor
-                       (assoc-in pos [:line] min-line)
-                       (assoc-in pos [:line] max-line))
+                       {:line min-line :ch 0}
+                       {:line max-line :ch 0})
         [b f] (partition-all (- line min-line) (.split text "\n"))
         max-indent (indent (first f))
         back-result (back-search (reverse b) max-indent)
         back-index (or (:index back-result) 49)
-        forward-index (or (:index (forward-search f (:indent back-result))) 20)]
+        forward-index (or (:index (forward-search f (:indent back-result))) 20)
+        to-line (min (+ line forward-index) max-line)]
     {:from {:line (max 0 (- line back-index 1))
             :ch 0}
-     :to   {:line (min (+ line forward-index) max-line)
-            :ch 0}}))
+     :to   {:line to-line
+            :ch (if (= to-line max-line) ch 0)}}))
 
 (defn ed->partfile [editor]
   (let [{:keys [from to]} (partial-range editor)
