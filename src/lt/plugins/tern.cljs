@@ -280,10 +280,12 @@
           :reaction (fn [this]
                       (let [cp (js/require "child_process")
                             worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
-                            send-cb (fn [e paths]
+                            init-cb (fn [e paths]
                                       (if e
                                         (object/raise this :kill)
-                                        (.send worker #js {:data (clj->js (tern-msg :addfiles paths))
+                                        ;; Need to handle config on server side and probably have a init message
+                                        (.send worker #js {:data (clj->js (merge (tern-msg :addfiles paths)
+                                                                                 {:config (:options @tern-config)}))
                                                            :command "init"})))
                             dis (fn [code signal]
                                   (object/raise this :kill))
@@ -298,7 +300,7 @@
                         (.on worker "message" msg)
                         (.on worker "disconnect" dis)
                         (.on worker "exit" dis)
-                        (current-ws-jsfiles send-cb)
+                        (current-ws-jsfiles init-cb)
                         (object/merge! this {::worker worker}))))
 
 (behavior ::error
@@ -359,6 +361,43 @@
               :desc "Tern: Reset the Tern javascript server"
               :exec (fn []
                       (object/raise tern-client :kill))})
+;;****************************************************
+;; Configuration
+;;****************************************************
+
+
+(behavior ::libs
+          :triggers #{:object.instant}
+          :reaction (fn [this libs]
+                      (doseq [lib libs]
+                        (let [path (if (files/file? (name lib))
+                                     lib
+                                     (files/join tern-lib-dir
+                                                 (-> lib name files/basename (str ".json"))))]
+                          (when (files/file? path)
+                            (object/update! this [:options :libs] conj path))))))
+
+(behavior ::plugin
+          :triggers #{:object.instant}
+          :reaction (fn [this plugin & opts]
+                      (let [path (if (files/file? (name plugin))
+                                   plugin
+                                   (files/join tern-plugin-dir
+                                               (-> plugin name files/basename (str ".js"))))
+                            value {:name (files/basename (name plugin))
+                                   :path path
+                                   :opts (or (first opts) true)}]
+                        (when (files/file? path)
+                          (object/update! this [:options :plugins] conj value)))))
+
+
+(object/object* ::tern.config
+                :tags #{:tern.config}
+                :options {:libs #{}
+                          :plugins #{}})
+
+(def tern-config (object/create ::tern.config))
+
 
 ;;****************************************************
 ;; Workspace Sync

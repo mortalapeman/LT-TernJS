@@ -22,6 +22,8 @@
                    :lt.plugins.tern/disconnect
                    :lt.plugins.tern/try-send
                    ]
+     :tern.config [(:lt.plugins.tern/libs :browser :ecma5 :jQuery)
+                   (:lt.plugins.tern/plugin :angular true)]
      :workspace [:lt.plugins.tern/watched.delete
                  :lt.plugins.tern/watched.create
                  :lt.plugins.tern/reset-on-update
