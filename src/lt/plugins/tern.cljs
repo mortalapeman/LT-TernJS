@@ -18,6 +18,9 @@
 (def plugin-dir (if-let [dir plugins/*plugin-dir*]
                   dir
                   (files/join plugins/user-plugins-dir "ternjs")))
+(def tern-dir (files/join plugin-dir "node_modules" "tern"))
+(def tern-lib-dir (files/join tern-dir "defs"))
+(def tern-plugin-dir (files/join tern-dir "plugins"))
 (def ternserver-path (files/join plugin-dir "node" "ternserver.js"))
 (def js-mime (delay (-> @files/files-obj :types (get "Javascript") :mime)))
 (def js-ext #"\.js$")
