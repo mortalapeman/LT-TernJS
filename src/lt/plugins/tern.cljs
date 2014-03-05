@@ -20,7 +20,7 @@
                   (files/join plugins/user-plugins-dir "ternjs")))
 (def tern-dir (files/join plugin-dir "node_modules" "tern"))
 (def tern-lib-dir (files/join tern-dir "defs"))
-(def tern-plugin-dir (files/join tern-dir "plugins"))
+(def tern-plugin-dir (files/join tern-dir "plugin"))
 (def ternserver-path (files/join plugin-dir "node" "ternserver.js"))
 (def js-mime (delay (-> @files/files-obj :types (get "Javascript") :mime)))
 (def js-ext #"\.js$")
@@ -264,6 +264,9 @@
 (defn ignore? [msg]
   (= (command msg) "ignore"))
 
+(defn log? [msg]
+  (= (command msg) "log"))
+
 ;;****************************************************
 ;; Client
 ;;****************************************************
@@ -284,13 +287,15 @@
                                       (if e
                                         (object/raise this :kill)
                                         ;; Need to handle config on server side and probably have a init message
-                                        (.send worker #js {:data (clj->js (merge (tern-msg :addfiles paths)
-                                                                                 {:config (:options @tern-config)}))
+                                        (.send worker #js {:data (clj->js (tern-msg :init
+                                                                                    {:config (:options @tern-config)
+                                                                                     :paths paths}))
                                                            :command "init"})))
                             dis (fn [code signal]
                                   (object/raise this :kill))
                             msg (fn [m]
                                   (cond
+                                   (log? m) (.log js/console (payload m))
                                    (ignore? m) nil
                                    (err? m) (object/raise this :error m)
                                    (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
@@ -325,7 +330,7 @@
                         (when (.-connected worker)
                           (.disconnect worker)))
                       (object/merge! this {:connected false})
-                      (notifos/set-msg! (str "Disconnected from Javascript auto-complete server"))))
+                      (notifos/set-msg! (str "Disconnected from: " (:name @this)))))
 
 
 (behavior ::try-send
@@ -361,6 +366,7 @@
               :desc "Tern: Reset the Tern javascript server"
               :exec (fn []
                       (object/raise tern-client :kill))})
+
 ;;****************************************************
 ;; Configuration
 ;;****************************************************
@@ -368,7 +374,7 @@
 
 (behavior ::libs
           :triggers #{:object.instant}
-          :reaction (fn [this libs]
+          :reaction (fn [this & libs]
                       (doseq [lib libs]
                         (let [path (if (files/file? (name lib))
                                      lib
@@ -397,7 +403,6 @@
                           :plugins #{}})
 
 (def tern-config (object/create ::tern.config))
-
 
 ;;****************************************************
 ;; Workspace Sync
