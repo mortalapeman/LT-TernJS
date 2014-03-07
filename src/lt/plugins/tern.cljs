@@ -40,6 +40,9 @@
 (defn gitdir? [p]
   (= ".git" (files/basename p)))
 
+(defn svndir? [p]
+  (= ".svn" (files/basename p)))
+
 (defn nodemoduledir? [p]
   (= "node_modules" (files/basename p)))
 
@@ -117,6 +120,7 @@
 (defn tern-ignore [p stats]
   (if (.isDirectory stats)
     (or (gitdir? p)
+        (svndir? p)
         (nodemoduledir? p))
     (or (plugin-jsfile? p)
         (not (jsfile? p)))))
