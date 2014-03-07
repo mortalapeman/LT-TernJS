@@ -281,32 +281,34 @@
 (behavior ::start-server
           :triggers #{:start-server}
           :reaction (fn [this]
-                      (let [cp (js/require "child_process")
-                            worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
-                            init-cb (fn [e paths]
-                                      (if e
-                                        (object/raise this :kill)
-                                        ;; Need to handle config on server side and probably have a init message
-                                        (.send worker #js {:data (clj->js (tern-msg :init
-                                                                                    {:config (:options @tern-config)
-                                                                                     :paths paths}))
-                                                           :command "init"})))
-                            dis (fn [code signal]
-                                  (object/raise this :kill))
-                            msg (fn [m]
-                                  (cond
-                                   (log? m) (.log js/console (payload m))
-                                   (ignore? m) nil
-                                   (err? m) (object/raise this :error m)
-                                   (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
-                                   (init? m) (do
-                                               (notifos/done-working (str "Connected to: " (:name @this)))
-                                               (object/raise this :connect this))))]
-                        (.on worker "message" msg)
-                        (.on worker "disconnect" dis)
-                        (.on worker "exit" dis)
-                        (current-ws-jsfiles init-cb)
-                        (object/merge! this {::worker worker}))))
+                      (when-not (:connecting @this)
+                        (let [cp (js/require "child_process")
+                              worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
+                              init-cb (fn [e paths]
+                                        (if e
+                                          (object/raise this :kill)
+                                          (.send worker #js {:data (clj->js (tern-msg :init
+                                                                                      {:config (:options @tern-config)
+                                                                                       :paths paths}))
+                                                             :command "init"})))
+                              dis (fn [code signal]
+                                    (object/raise this :kill))
+                              msg (fn [m]
+                                    (cond
+                                     (log? m) (.log js/console (payload m))
+                                     (ignore? m) nil
+                                     (err? m) (object/raise this :error m)
+                                     (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
+                                     (init? m) (do
+                                                 (object/merge! this {:connecting false})
+                                                 (notifos/done-working (str "Connected to: " (:name @this)))
+                                                 (object/raise this :connect this))))]
+                          (object/merge! this {:connecting true})
+                          (.on worker "message" msg)
+                          (.on worker "disconnect" dis)
+                          (.on worker "exit" dis)
+                          (current-ws-jsfiles init-cb)
+                          (object/merge! this {::worker worker})))))
 
 (behavior ::error
           :triggers #{:error}
@@ -317,6 +319,7 @@
 (behavior ::kill
           :triggers #{:kill}
           :reaction (fn [this]
+                      (object/merge! this {:connecting false})
                       (object/raise this :disconnect)
                       (when-let [worker (::worker @this)]
                         (.kill worker)
