@@ -282,6 +282,7 @@
           :triggers #{:start-server}
           :reaction (fn [this]
                       (when-not (:connecting @this)
+                        (notifos/working (str "Connecting to: " (:name @this)))
                         (let [cp (js/require "child_process")
                               worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
                               init-cb (fn [e paths]
@@ -341,8 +342,13 @@
           :order -7
           :reaction (fn [this _]
                       (when-not (:connected @this)
-                        (notifos/working (str "Connecting to: " (:name @this)))
                         (object/raise this :start-server))))
+
+(behavior ::refresh
+          :triggers #{:object.refresh}
+          :reaction (fn [this]
+                      (when (:connected @this)
+                        (object/raise this :kill))))
 
 
 (object/object* ::tern.client
