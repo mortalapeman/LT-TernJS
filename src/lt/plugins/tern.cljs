@@ -393,7 +393,7 @@
                                    plugin
                                    (files/join tern-plugin-dir
                                                (-> plugin name files/basename (str ".js"))))
-                            value {:name (files/basename (name plugin))
+                            value {:name (-> plugin name files/basename (.split #"\.") first)
                                    :path path
                                    :opts (or (first opts) true)}]
                         (when (files/file? path)
