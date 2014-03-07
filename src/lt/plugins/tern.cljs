@@ -18,6 +18,9 @@
 (def plugin-dir (if-let [dir plugins/*plugin-dir*]
                   dir
                   (files/join plugins/user-plugins-dir "ternjs")))
+(def tern-dir (files/join plugin-dir "node_modules" "tern"))
+(def tern-lib-dir (files/join tern-dir "defs"))
+(def tern-plugin-dir (files/join tern-dir "plugin"))
 (def ternserver-path (files/join plugin-dir "node" "ternserver.js"))
 (def js-mime (delay (-> @files/files-obj :types (get "Javascript") :mime)))
 (def js-ext #"\.js$")
@@ -36,6 +39,9 @@
 
 (defn gitdir? [p]
   (= ".git" (files/basename p)))
+
+(defn svndir? [p]
+  (= ".svn" (files/basename p)))
 
 (defn nodemoduledir? [p]
   (= "node_modules" (files/basename p)))
@@ -114,6 +120,7 @@
 (defn tern-ignore [p stats]
   (if (.isDirectory stats)
     (or (gitdir? p)
+        (svndir? p)
         (nodemoduledir? p))
     (or (plugin-jsfile? p)
         (not (jsfile? p)))))
@@ -261,6 +268,9 @@
 (defn ignore? [msg]
   (= (command msg) "ignore"))
 
+(defn log? [msg]
+  (= (command msg) "log"))
+
 ;;****************************************************
 ;; Client
 ;;****************************************************
@@ -275,28 +285,35 @@
 (behavior ::start-server
           :triggers #{:start-server}
           :reaction (fn [this]
-                      (let [cp (js/require "child_process")
-                            worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
-                            send-cb (fn [e paths]
-                                      (if e
-                                        (object/raise this :kill)
-                                        (.send worker #js {:data (clj->js (tern-msg :addfiles paths))
-                                                           :command "init"})))
-                            dis (fn [code signal]
-                                  (object/raise this :kill))
-                            msg (fn [m]
-                                  (cond
-                                   (ignore? m) nil
-                                   (err? m) (object/raise this :error m)
-                                   (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
-                                   (init? m) (do
-                                               (notifos/done-working (str "Connected to: " (:name @this)))
-                                               (object/raise this :connect this))))]
-                        (.on worker "message" msg)
-                        (.on worker "disconnect" dis)
-                        (.on worker "exit" dis)
-                        (current-ws-jsfiles send-cb)
-                        (object/merge! this {::worker worker}))))
+                      (when-not (:connecting @this)
+                        (notifos/working (str "Connecting to: " (:name @this)))
+                        (let [cp (js/require "child_process")
+                              worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
+                              init-cb (fn [e paths]
+                                        (if e
+                                          (object/raise this :kill)
+                                          (.send worker #js {:data (clj->js (tern-msg :init
+                                                                                      {:config (:options @tern-config)
+                                                                                       :paths paths}))
+                                                             :command "init"})))
+                              dis (fn [code signal]
+                                    (object/raise this :kill))
+                              msg (fn [m]
+                                    (cond
+                                     (log? m) (.log js/console (payload m))
+                                     (ignore? m) nil
+                                     (err? m) (object/raise this :error m)
+                                     (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
+                                     (init? m) (do
+                                                 (object/merge! this {:connecting false})
+                                                 (notifos/done-working (str "Connected to: " (:name @this)))
+                                                 (object/raise this :connect this))))]
+                          (object/merge! this {:connecting true})
+                          (.on worker "message" msg)
+                          (.on worker "disconnect" dis)
+                          (.on worker "exit" dis)
+                          (current-ws-jsfiles init-cb)
+                          (object/merge! this {::worker worker})))))
 
 (behavior ::error
           :triggers #{:error}
@@ -307,6 +324,7 @@
 (behavior ::kill
           :triggers #{:kill}
           :reaction (fn [this]
+                      (object/merge! this {:connecting false})
                       (object/raise this :disconnect)
                       (when-let [worker (::worker @this)]
                         (.kill worker)
@@ -320,7 +338,7 @@
                         (when (.-connected worker)
                           (.disconnect worker)))
                       (object/merge! this {:connected false})
-                      (notifos/set-msg! (str "Disconnected from Javascript auto-complete server"))))
+                      (notifos/set-msg! (str "Disconnected from: " (:name @this)))))
 
 
 (behavior ::try-send
@@ -328,8 +346,13 @@
           :order -7
           :reaction (fn [this _]
                       (when-not (:connected @this)
-                        (notifos/working (str "Connecting to: " (:name @this)))
                         (object/raise this :start-server))))
+
+(behavior ::refresh
+          :triggers #{:object.refresh}
+          :reaction (fn [this]
+                      (when (:connected @this)
+                        (object/raise this :kill))))
 
 
 (object/object* ::tern.client
@@ -356,6 +379,43 @@
               :desc "Tern: Reset the Tern javascript server"
               :exec (fn []
                       (object/raise tern-client :kill))})
+
+;;****************************************************
+;; Configuration
+;;****************************************************
+
+
+(behavior ::libs
+          :triggers #{:object.instant}
+          :reaction (fn [this & libs]
+                      (doseq [lib libs]
+                        (let [path (if (files/file? (name lib))
+                                     lib
+                                     (files/join tern-lib-dir
+                                                 (-> lib name files/basename (str ".json"))))]
+                          (when (files/file? path)
+                            (object/update! this [:options :libs] conj path))))))
+
+(behavior ::plugin
+          :triggers #{:object.instant}
+          :reaction (fn [this plugin & opts]
+                      (let [path (if (files/file? (name plugin))
+                                   plugin
+                                   (files/join tern-plugin-dir
+                                               (-> plugin name files/basename (str ".js"))))
+                            value {:name (-> plugin name files/basename (.split #"\.") first)
+                                   :path path
+                                   :opts (or (first opts) true)}]
+                        (when (files/file? path)
+                          (object/update! this [:options :plugins] conj value)))))
+
+
+(object/object* ::tern.config
+                :tags #{:tern.config}
+                :options {:libs #{}
+                          :plugins #{}})
+
+(def tern-config (object/create ::tern.config))
 
 ;;****************************************************
 ;; Workspace Sync
