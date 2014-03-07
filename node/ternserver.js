@@ -56,6 +56,7 @@ function loadPlugins(paths) {
 var server;
 function getServer(msg) {
   if (server) { return server; }
+  _log(INFO, "getServer(msg) : ", msg.command);
   if (msg.command !== 'init') {
     throw new Error("Server not started and on init message received");
   }
