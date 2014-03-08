@@ -10,13 +10,28 @@ A Light Table plugin utilizing [Tern](https://github.com/marijnh/tern), a fantas
 
 The listed features are only a subset of what Tern is capable of, more to come.
 
-### To-dos/Known Issues
+### Configuration
 
-* All json defs are loaded by default, this means you will get auto-completion for jQuery even if you don't have jQuery in your project.
-* Same goes for plugins, you will get auto-completion for AngularJS even if you haven't don't have it in your workspace.
-* No distinction between browser and NodeJS environment, a side effect of blindly loading all plugins.
+Normally tern servers are configured through a `.tern-project` file; however, the ability for a workspace to contain multiple directories means multiple configuration files could exist for one workspace. Support for `.tern-project` files is coming, it's just not there yet.
 
-All these problems will be addressed in future releases, feedback is appreciated!
+#### Behavior Configuration
+
+The default configuration for Tern is the browser environment `(:lt.plugins.tern/libs :browser :ecma5)`. To change to nodejs, merge the following changes in to your workspace behaviors:
+
+    {:+ {:tern.config [(:lt.plugins.tern/libs :ecma5)
+                       (:lt.plugins.tern/plugin :node true)]}
+     :- {:tern.config [:lt.plugins.tern/libs]}}
+
+Arguments to `:lt.plugins.tern/libs` can be:
+
+1. One or many built in libs: `:ecma5 :browser :jquery :underscore`
+2. One or many file path(s) to valid JSON Tern lib(s).
+
+Arguments to `:lt.plugins.tern/plugin` can be:
+
+1. One of the built in plugins: `:angular :component :doc_comment :node :requirejs`
+2. One file path to a valid Tern JavaScript plugin.
+
 
 ### Contributing
 
