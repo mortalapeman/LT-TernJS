@@ -5,30 +5,15 @@ var fs = require('fs'),
     plugin_dir = path.join(module_dir, 'plugin'),
     defs_dir = path.join(module_dir, 'defs'),
     maxIdleTime = 6e4 * 5, // Shut down after five minutes of inactivity
-    shutdown = setTimeout(doShutdown, maxIdleTime);
+    shutdown = setTimeout(doShutdown, maxIdleTime),
+    DEBUG = false,
+    INFO = "INFO",
+    WARNING = "WARNING",
+    ERROR = "ERROR";
 
 function doShutdown() {
   console.log("Was idle for " + Math.floor(maxIdleTime / 6e4) + " minutes. Shutting down.");
   process.exit();
-}
-
-function loadDefs(dir) {
-  return fs.readdirSync(dir)
-    .map(function(x) {
-      var fullPath = path.join(dir, x);
-      return JSON.parse(fs.readFileSync(fullPath));
-    });
-}
-
-function loadPlugins(dir) {
-  var plugins = {};
-  fs.readdirSync(plugin_dir)
-    .forEach(function(x) {
-       var name = path.basename(x).split('.js')[0];
-       require(path.join(dir, x));
-       plugins[name] = true;
-    });
-  return plugins;
 }
 
 function send(err, data, msg) {
@@ -36,7 +21,7 @@ function send(err, data, msg) {
   if (msg) {
     result.cb = msg.cb;
     result.command = msg.command;
-    result.data = msg.data;
+    result.data = msg.data || {};
   }
   if (err) {
     result.err = err;
@@ -47,39 +32,76 @@ function send(err, data, msg) {
   process.send(result);
 }
 
-var config = {
-  async: true,
-  defs: loadDefs(defs_dir),
-  plugins: loadPlugins(plugin_dir),
-  getFile: function(x, cb) {
-    fs.readFile(x, {encoding: 'utf8'}, cb);
-  },
-};
+function _log(level, str, obj) {
+  if (DEBUG) {
+    send(null, '[' + level + '] '+ str + (obj ? " : " + JSON.stringify(obj) : ""), { command: "log" });
+  }
+}
+
+function loadLibs(paths) {
+  return paths.map(function(x) { return JSON.parse(fs.readFileSync(x)); });
+}
 
 
-var server = new tern.Server(config);
+function loadPlugins(paths) {
+  if (!paths) { _log(INFO, 'No plugins loaded'); }
+  var plugins = {};
+    (paths || []).forEach(function(x) {
+       require(x.path);
+       plugins[x.name] = x.opts;
+    });
+  return plugins;
+}
+
+var server;
+function getServer(msg) {
+  if (server) { return server; }
+  _log(INFO, "getServer(msg) : ", msg.command);
+  if (msg.command !== 'init') {
+    throw new Error("Server not started and on init message received");
+  }
+  _log(INFO, 'Creating new tern server', msg);
+  return (server = new tern.Server({
+    async: true,
+    defs: loadLibs(msg.data.payload.config.libs),
+    plugins: loadPlugins(msg.data.payload.config.plugins),
+    getFile: function(x, cb) {
+      fs.readFile(x, {encoding: 'utf8'}, cb);
+    },
+  }));
+}
+
+
 var currentmsg;
-
 process.on('message', function(msg) {
   clearTimeout(shutdown);
   shutdown = setTimeout(doShutdown, maxIdleTime);
   currentmsg = msg;
-  var data = msg.data || {};
+  var srv = getServer(msg),
+      data = msg.data || {};
   switch(data.type) {
     case 'request':
-      server.request(data.payload, function(e, out) {
+      srv.request(data.payload, function(e, out) {
         send(e, out, msg);
       });
       break;
     case 'addfiles':
       data.payload.forEach(function(x) {
-        server.addFile(x);
+        srv.addFile(x);
       });
       send(null, {}, msg);
       break;
     case 'deletefiles':
       data.payload.forEach(function(x) {
-        server.delFile(x);
+        srv.delFile(x);
+      });
+      send(null, {}, msg);
+      break;
+    case 'init':
+      _log(INFO, 'Init server');
+      if (!data.payload.paths) { _log(WARNING, 'No files found for loading'); }
+      (data.payload.paths || []).forEach(function(x) {
+        srv.addFile(x);
       });
       send(null, {}, msg);
       break;

@@ -21,7 +21,9 @@
                    :lt.plugins.tern/kill
                    :lt.plugins.tern/disconnect
                    :lt.plugins.tern/try-send
-                   ]
+                   :lt.plugins.tern/refresh]
+     :tern.config [(:lt.plugins.tern/libs :browser :ecma5)
+                   (:lt.plugins.tern/plugin :doc_comment true)]
      :workspace [:lt.plugins.tern/watched.delete
                  :lt.plugins.tern/watched.create
                  :lt.plugins.tern/reset-on-update

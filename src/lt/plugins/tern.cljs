@@ -10,6 +10,7 @@
             [lt.objs.editor.pool :as pool]
             [lt.objs.notifos :as notifos]
             [lt.objs.sidebar.command :as cmd]
+            [lt.objs.workspace :as workspace]
             [lt.util.load :as load]
             [lt.util.cljs :refer [js->clj]])
   (:require-macros [lt.macros :refer [behavior defui]]))
@@ -17,20 +18,126 @@
 (def plugin-dir (if-let [dir plugins/*plugin-dir*]
                   dir
                   (files/join plugins/user-plugins-dir "ternjs")))
+(def tern-dir (files/join plugin-dir "node_modules" "tern"))
+(def tern-lib-dir (files/join tern-dir "defs"))
+(def tern-plugin-dir (files/join tern-dir "plugin"))
 (def ternserver-path (files/join plugin-dir "node" "ternserver.js"))
 (def js-mime (delay (-> @files/files-obj :types (get "Javascript") :mime)))
 (def js-ext #"\.js$")
 
+;;****************************************************
+;; File System
+;;****************************************************
+
+(def fs (js/require "fs"))
+
+(defn readdir [dir cb]
+  (fs.readdir dir cb))
+
+(defn stat [path cb]
+  (fs.stat path cb))
+
+(defn gitdir? [p]
+  (= ".git" (files/basename p)))
+
+(defn svndir? [p]
+  (= ".svn" (files/basename p)))
+
+(defn nodemoduledir? [p]
+  (= "node_modules" (files/basename p)))
+
 (defn jsfile? [p]
-  (re-find js-ext p))
+  (boolean
+   (re-find js-ext p)))
 
-(defn all-js-files [ws]
-  (let [ds (:folders @ws)
-        fs (filter jsfile? (:files @ws))]
-    (concat fs (mapcat #(files/filter-walk jsfile? %) ds))))
+(defn plugin-jsfile? [p]
+  (boolean
+   (and (jsfile? p)
+        (re-find #"_compiled" p))))
 
-(defn dir->jsfiles [dir]
-  (files/filter-walk jsfile? dir))
+(defmulti async-filter-walk
+  (fn [arg ignore? done] (string? arg)))
+
+(defmethod async-filter-walk true
+  [dir ignore? done]
+  (let [results (atom [])
+        error (atom nil)
+        handle-error (fn [e]
+                       (when-not @error
+                         (reset! error e)
+                         (done e nil)))
+        recur-cb (fn [pending done]
+                   (fn [e r]
+                     (if e
+                       (handle-error e)
+                       (do
+                         (swap! results concat r)
+                         (swap! pending dec)
+                         (when (= 0 @pending)
+                           (done nil @results))))))
+        stat-cb (fn [pending done p]
+                  (fn [e stats]
+                    (cond
+                     e (handle-error e)
+                     (ignore? p stats) (do
+                                         (swap! pending dec)
+                                         (when (= 0 @pending)
+                                           (done nil @results)))
+                     (.isDirectory stats) (async-filter-walk p ignore? (recur-cb pending done))
+                     :else (do
+                             (swap! results conj p)
+                             (swap! pending dec)
+                             (when (= 0 @pending)
+                               (done nil @results))))))]
+    (readdir dir (fn [e paths]
+                   (cond
+                    e (handle-error e)
+                    (= 0 (.-length paths)) (done nil @results)
+                    :else (let [pending (atom (.-length paths))]
+                            (doseq [x paths
+                                    :let [p (files/join dir x)]]
+                              (stat p (stat-cb pending done p)))))))))
+
+(defmethod async-filter-walk false
+  [dirs ignore? done]
+  (let [pending (atom (count dirs))
+        results (atom [])
+        error (atom nil)
+        cb (fn [e r]
+             (swap! pending dec)
+             (if e
+               (do
+                 (when-not @error
+                   (done e nil)
+                   (reset! error e)))
+               (do
+                 (swap! results concat r)
+                 (when (= 0 @pending)
+                   (done nil @results)))))]
+    (doseq [p dirs]
+      (async-filter-walk p ignore? cb))))
+
+(defn tern-ignore [p stats]
+  (if (.isDirectory stats)
+    (or (gitdir? p)
+        (svndir? p)
+        (nodemoduledir? p))
+    (or (plugin-jsfile? p)
+        (not (jsfile? p)))))
+
+(defn current-ws-jsfiles [done]
+  (let [ws @workspace/current-ws
+        ds (:folders ws)
+        fs (filter jsfile? (:files ws))]
+    (async-filter-walk ds tern-ignore (fn [e r]
+                                        (done e (concat fs r))))))
+
+(defn dir->jsfiles [dir done]
+  (async-filter-walk dir tern-ignore done))
+
+;;****************************************************
+;; Query and Request Helpers
+;;****************************************************
 
 (defn tern-msg [t d]
   {:type (name t)
@@ -50,16 +157,84 @@
    :text (ed/->val editor)
    :type "full"})
 
+(defn indent [s]
+  (->> (map #(re-find #"[ \t]" %) s)
+       (take-while (comp true? boolean))
+       count))
+
+(defn jsfn? [s]
+  (boolean
+   (re-find #"function" s)))
+
+(defn back-search [strs max-indent]
+  (letfn [(line-info [i v]
+                {:index i
+                 :indent (indent v)
+                 :jsfn? (jsfn? v)})
+          (match? [{:keys [jsfn? indent]}]
+                  (and jsfn? (>= max-indent indent)))]
+    (->> (map-indexed line-info strs)
+         (filter match?)
+         first)))
+
+(defn forward-search [strs max-indent]
+  (letfn [(line-info [i v]
+                     {:index i
+                      :blockend? (>= max-indent (indent v))})]
+    (->> (map-indexed line-info strs)
+         (drop 1)
+         (filter :blockend?)
+         first)))
+
+(defn partial-range [editor]
+  (let [{:keys [line ch]} (ed/->cursor editor)
+        min-line (max 0 (- line 50))
+        max-line (min (.lastLine (ed/->cm-ed editor)) (+ line 20))
+        text (ed/range editor
+                       {:line min-line :ch 0}
+                       {:line max-line :ch 0})
+        [b f] (partition-all (- line min-line) (.split text "\n"))
+        max-indent (indent (first f))
+        back-result (back-search (reverse b) max-indent)
+        back-index (or (:index back-result) 49)
+        forward-index (or (:index (forward-search f (:indent back-result))) 20)
+        to-line (min (+ line forward-index) max-line)]
+    {:from {:line (max 0 (- line back-index 1))
+            :ch 0}
+     :to   {:line to-line
+            :ch (if (= to-line max-line) ch 0)}}))
+
+(defn ed->partfile [editor]
+  (let [{:keys [from to]} (partial-range editor)
+        offset-line (max 0 (:line from))]
+    {:name (get-in @editor [:info :path])
+     :offsetLines offset-line
+     :text (ed/range editor from to)
+     :type "part"}))
+
 (defn ed->mime [editor]
   (-> @editor :doc deref :mime))
+
+(defn ed->line-count [editor]
+  (ed/line-count (ed/->cm-ed editor)))
 
 (defn ed->req
   ([editor type]
    (ed->req editor type {}))
   ([editor type query-ops]
-   (tern-msg :request
-             {:query (ed->query editor type query-ops)
-              :files [(ed->fullfile editor)]})))
+   (let [req {:query (ed->query editor type query-ops)
+              :files [(if (> (ed->line-count editor) 250)
+                        (ed->partfile editor)
+                        (ed->fullfile editor))]}]
+     (if-let [offset (-> req :files first :offsetLines)]
+       (tern-msg :request (-> req
+                              (update-in [:query :end :line] - offset)
+                              (assoc-in [:query :file] "#0")))
+       (tern-msg :request req)))))
+
+;;****************************************************
+;; Message Helpers
+;;****************************************************
 
 (defn id [msg]
   (let [v (.-cb msg)]
@@ -93,6 +268,9 @@
 (defn ignore? [msg]
   (= (command msg) "ignore"))
 
+(defn log? [msg]
+  (= (command msg) "log"))
+
 ;;****************************************************
 ;; Client
 ;;****************************************************
@@ -107,25 +285,35 @@
 (behavior ::start-server
           :triggers #{:start-server}
           :reaction (fn [this]
-                      (let [cp (js/require "child_process")
-                            worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
-                            data (clj->js (tern-msg :addfiles (all-js-files lt.objs.workspace/current-ws)))
-                            dis (fn [code signal]
-                                  (object/raise this :kill))
-                            msg (fn [m]
-                                  (cond
-                                   (ignore? m) nil
-                                   (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
-                                   (init? m) (do
-                                               (notifos/done-working (str "Connected to: " (:name @this)))
-                                               (object/raise this :connect this))
-                                   (err? m) (object/raise this :error m)))]
-                        (.on worker "message" msg)
-                        (.on worker "disconnect" dis)
-                        (.on worker "exit" dis)
-                        (.send worker #js {:data data
-                                           :command "init"})
-                        (object/merge! this {::worker worker}))))
+                      (when-not (:connecting @this)
+                        (notifos/working (str "Connecting to: " (:name @this)))
+                        (let [cp (js/require "child_process")
+                              worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
+                              init-cb (fn [e paths]
+                                        (if e
+                                          (object/raise this :kill)
+                                          (.send worker #js {:data (clj->js (tern-msg :init
+                                                                                      {:config (:options @tern-config)
+                                                                                       :paths paths}))
+                                                             :command "init"})))
+                              dis (fn [code signal]
+                                    (object/raise this :kill))
+                              msg (fn [m]
+                                    (cond
+                                     (log? m) (.log js/console (payload m))
+                                     (ignore? m) nil
+                                     (err? m) (object/raise this :error m)
+                                     (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
+                                     (init? m) (do
+                                                 (object/merge! this {:connecting false})
+                                                 (notifos/done-working (str "Connected to: " (:name @this)))
+                                                 (object/raise this :connect this))))]
+                          (object/merge! this {:connecting true})
+                          (.on worker "message" msg)
+                          (.on worker "disconnect" dis)
+                          (.on worker "exit" dis)
+                          (current-ws-jsfiles init-cb)
+                          (object/merge! this {::worker worker})))))
 
 (behavior ::error
           :triggers #{:error}
@@ -136,6 +324,7 @@
 (behavior ::kill
           :triggers #{:kill}
           :reaction (fn [this]
+                      (object/merge! this {:connecting false})
                       (object/raise this :disconnect)
                       (when-let [worker (::worker @this)]
                         (.kill worker)
@@ -149,7 +338,7 @@
                         (when (.-connected worker)
                           (.disconnect worker)))
                       (object/merge! this {:connected false})
-                      (notifos/set-msg! (str "Disconnected from Javascript auto-complete server"))))
+                      (notifos/set-msg! (str "Disconnected from: " (:name @this)))))
 
 
 (behavior ::try-send
@@ -157,8 +346,13 @@
           :order -7
           :reaction (fn [this _]
                       (when-not (:connected @this)
-                        (notifos/working (str "Connecting to: " (:name @this)))
                         (object/raise this :start-server))))
+
+(behavior ::refresh
+          :triggers #{:object.refresh}
+          :reaction (fn [this]
+                      (when (:connected @this)
+                        (object/raise this :kill))))
 
 
 (object/object* ::tern.client
@@ -187,13 +381,52 @@
                       (object/raise tern-client :kill))})
 
 ;;****************************************************
+;; Configuration
+;;****************************************************
+
+
+(behavior ::libs
+          :triggers #{:object.instant}
+          :reaction (fn [this & libs]
+                      (doseq [lib libs]
+                        (let [path (if (files/file? (name lib))
+                                     lib
+                                     (files/join tern-lib-dir
+                                                 (-> lib name files/basename (str ".json"))))]
+                          (when (files/file? path)
+                            (object/update! this [:options :libs] conj path))))))
+
+(behavior ::plugin
+          :triggers #{:object.instant}
+          :reaction (fn [this plugin & opts]
+                      (let [path (if (files/file? (name plugin))
+                                   plugin
+                                   (files/join tern-plugin-dir
+                                               (-> plugin name files/basename (str ".js"))))
+                            value {:name (-> plugin name files/basename (.split #"\.") first)
+                                   :path path
+                                   :opts (or (first opts) true)}]
+                        (when (files/file? path)
+                          (object/update! this [:options :plugins] conj value)))))
+
+
+(object/object* ::tern.config
+                :tags #{:tern.config}
+                :options {:libs #{}
+                          :plugins #{}})
+
+(def tern-config (object/create ::tern.config))
+
+;;****************************************************
 ;; Workspace Sync
 ;;****************************************************
 
 (defn update-server [this action path]
   (when (:connected @this)
     (cond
-     (files/dir? path)  (clients/send this :ignore (tern-msg action (dir->jsfiles path)))
+     (files/dir? path) (dir->jsfiles path (fn [e paths]
+                                            (when-not e
+                                              (clients/send this :ignore (tern-msg action paths)))))
      (and (files/file? path) (jsfile? path)) (clients/send this :ignore (tern-msg action [path])))))
 
 (behavior ::watched.create
