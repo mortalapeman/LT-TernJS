@@ -11,13 +11,12 @@
             [lt.objs.notifos :as notifos]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.workspace :as workspace]
-            [lt.util.load :as load]
-            [lt.util.cljs :refer [js->clj]])
+            [lt.util.load :as load])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def plugin-dir (if-let [dir plugins/*plugin-dir*]
                   dir
-                  (files/join plugins/user-plugins-dir "ternjs")))
+                  (files/join plugins/user-plugins-dir "TernJS")))
 (def tern-dir (files/join plugin-dir "node_modules" "tern"))
 (def tern-lib-dir (files/join tern-dir "defs"))
 (def tern-plugin-dir (files/join tern-dir "plugin"))
@@ -275,6 +274,12 @@
 ;; Client
 ;;****************************************************
 
+(defn check-server-path []
+  (let [exists (files/exists? ternserver-path)]
+    (when-not exists
+      (notifos/set-msg! (str "Could not find Tern server executable" file) {:class "error"}))
+    exists))
+
 (behavior ::send
           :triggers #{:send!}
           :reaction (fn [this msg]
@@ -285,7 +290,8 @@
 (behavior ::start-server
           :triggers #{:start-server}
           :reaction (fn [this]
-                      (when-not (:connecting @this)
+                      (when (and (not (:connecting @this))
+                                 (check-server-path))
                         (notifos/working (str "Connecting to: " (:name @this)))
                         (let [cp (js/require "child_process")
                               worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
