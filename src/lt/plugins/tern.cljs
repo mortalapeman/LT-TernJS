@@ -17,7 +17,7 @@
 
 (def plugin-dir (if-let [dir plugins/*plugin-dir*]
                   dir
-                  (files/join plugins/user-plugins-dir "ternjs")))
+                  (files/join plugins/user-plugins-dir "TernJS")))
 (def tern-dir (files/join plugin-dir "node_modules" "tern"))
 (def tern-lib-dir (files/join tern-dir "defs"))
 (def tern-plugin-dir (files/join tern-dir "plugin"))
