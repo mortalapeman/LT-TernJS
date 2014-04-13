@@ -77,34 +77,41 @@ process.on('message', function(msg) {
   clearTimeout(shutdown);
   shutdown = setTimeout(doShutdown, maxIdleTime);
   currentmsg = msg;
-  var srv = getServer(msg),
-      data = msg.data || {};
-  switch(data.type) {
-    case 'request':
-      srv.request(data.payload, function(e, out) {
-        send(e, out, msg);
-      });
-      break;
-    case 'addfiles':
-      data.payload.forEach(function(x) {
-        srv.addFile(x);
-      });
-      send(null, {}, msg);
-      break;
-    case 'deletefiles':
-      data.payload.forEach(function(x) {
-        srv.delFile(x);
-      });
-      send(null, {}, msg);
-      break;
-    case 'init':
-      _log(INFO, 'Init server');
-      if (!data.payload.paths) { _log(WARNING, 'No files found for loading'); }
-      (data.payload.paths || []).forEach(function(x) {
-        srv.addFile(x);
-      });
-      send(null, {}, msg);
-      break;
+  try {
+    var srv = getServer(msg),
+        data = msg.data || {};
+    switch(data.type) {
+      case 'request':
+        srv.request(data.payload, function(e, out) {
+          send(e, out, msg);
+        });
+        break;
+      case 'addfiles':
+        data.payload.forEach(function(x) {
+          srv.addFile(x);
+        });
+        send(null, {}, msg);
+        break;
+      case 'deletefiles':
+        data.payload.forEach(function(x) {
+          srv.delFile(x);
+        });
+        send(null, {}, msg);
+        break;
+      case 'init':
+        _log(INFO, 'Init server');
+        if (!data.payload.paths) { _log(WARNING, 'No files found for loading'); }
+        (data.payload.paths || []).forEach(function(x) {
+          srv.addFile(x);
+        });
+        send(null, {}, msg);
+        break;
+    }
+  } catch (e) {
+    // Tern throws Syntax errors for unterminated block comments
+    if (e instanceof SyntaxError) return;
+    send(e, {}, currentmsg);
+    doShutdown()
   }
 });
 
