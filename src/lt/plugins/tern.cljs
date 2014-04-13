@@ -290,7 +290,8 @@
 (behavior ::start-server
           :triggers #{:start-server}
           :reaction (fn [this]
-                      (when (and (not (:connecting @this)) (check-server-path))
+                      (when (and (not (:connecting @this))
+                                 (check-server-path))
                         (notifos/working (str "Connecting to: " (:name @this)))
                         (let [cp (js/require "child_process")
                               worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
