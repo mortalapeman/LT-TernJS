@@ -294,12 +294,13 @@
                                  (check-server-path))
                         (notifos/working (str "Connecting to: " (:name @this)))
                         (let [cp (js/require "child_process")
+                              config (object/create ::tern.config)
                               worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe)) :silent true})
                               init-cb (fn [e paths]
                                         (if e
                                           (object/raise this :kill)
                                           (.send worker #js {:data (clj->js (tern-msg :init
-                                                                                      {:config (:options @tern-config)
+                                                                                      {:config (:options @config)
                                                                                        :paths paths}))
                                                              :command "init"})))
                               dis (fn [code signal]
@@ -314,7 +315,8 @@
                                                  (object/merge! this {:connecting false})
                                                  (notifos/done-working (str "Connected to: " (:name @this)))
                                                  (object/raise this :connect this))))]
-                          (object/merge! this {:connecting true})
+                          (object/merge! this {:connecting true
+                                               :config config})
                           (.on worker "message" msg)
                           (.on worker "disconnect" dis)
                           (.on worker "exit" dis)
@@ -330,7 +332,9 @@
 (behavior ::kill
           :triggers #{:kill}
           :reaction (fn [this]
-                      (object/merge! this {:connecting false})
+                      (object/destroy! (:config @this))
+                      (object/merge! this {:connecting false
+                                           :config nil})
                       (object/raise this :disconnect)
                       (when-let [worker (::worker @this)]
                         (.kill worker)
@@ -421,7 +425,6 @@
                 :options {:libs #{}
                           :plugins #{}})
 
-(def tern-config (object/create ::tern.config))
 
 ;;****************************************************
 ;; Workspace Sync
