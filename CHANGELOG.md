@@ -1,3 +1,8 @@
+### 0.1.5
+
+* FIX: Upstream issue regarding optional comments
+* ADD: Refresh configuration after disconnection from server
+
 ### 0.1.4
 
 * FIX: Incorrect plugin dependecy name (azmr)
