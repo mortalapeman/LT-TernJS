@@ -1,3 +1,7 @@
+### 0.1.4
+
+* FIX: Incorrect plugin dependecy name (azmr)
+
 ### 0.1.3
 
 * FIX: Unterminated comments fill console with errors
