@@ -364,6 +364,11 @@
                       (when (:connected @this)
                         (object/raise this :kill))))
 
+(behavior ::on-app-shutdown
+          :triggers #{:close!}
+          :reaction (fn [_]
+                      (cmd/exec! :tern.reset)))
+
 
 (object/object* ::tern.client
                 :tags #{:client :tern.client}
