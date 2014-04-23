@@ -142,17 +142,21 @@
   {:type (name t)
    :payload d})
 
+(defn ed->path [editor]
+  (or (get-in @editor [:info :path]) "untitled"))
+
 (defn ed->query
   ([editor type]
    (ed->query editor type {}))
   ([editor type query-ops]
    (merge {:type (name type)
-           :file (get-in @editor [:info :path])
+           :file (ed->path editor)
            :end (ed/->cursor editor)}
           query-ops)))
 
+
 (defn ed->fullfile [editor]
-  {:name (get-in @editor [:info :path])
+  {:name (ed->path editor)
    :text (ed/->val editor)
    :type "full"})
 
@@ -206,13 +210,14 @@
 (defn ed->partfile [editor]
   (let [{:keys [from to]} (partial-range editor)
         offset-line (max 0 (:line from))]
-    {:name (get-in @editor [:info :path])
+    {:name (ed->path editor)
      :offsetLines offset-line
      :text (ed/range editor from to)
      :type "part"}))
 
 (defn ed->mime [editor]
-  (-> @editor :doc deref :mime))
+  (get-in @editor [:info :mime]))
+
 
 (defn ed->line-count [editor]
   (ed/line-count (ed/->cm-ed editor)))
@@ -326,7 +331,9 @@
 (behavior ::error
           :triggers #{:error}
           :reaction (fn [this msg]
-                      (.error js/console (stack msg))))
+                      (when msg
+                        (.error js/console (or (stack msg)
+                                               (.-err msg))))))
 
 
 (behavior ::kill
