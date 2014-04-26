@@ -84,7 +84,7 @@ var asyncImportFiles = (function() {
   var cachedFiles = [],
       count = 0,
       nextFile;
-  function next(server) {
+  function next(server, msg) {
     nextFile = cachedFiles.pop();
     if (nextFile) {
       try {
@@ -97,12 +97,13 @@ var asyncImportFiles = (function() {
       setTimeout(function() { next(server);}, 0);
       return;
     }
+    send(null, {}, msg);
     _log(INFO, "Finished loading files", {time: new Date(), count: count });
   }
-  return function(server, files) {
+  return function(server, files, msg) {
     _log(INFO, "Start loading files: ", {startTime: new Date(), fileCount: files.length});
     cachedFiles = cachedFiles.concat(files);
-    next(server);
+    next(server, msg);
   };
 }());
 
@@ -125,8 +126,7 @@ process.on('message', function(msg) {
         _log(INFO, "Server files", srv.files.map(function(x) { return x.name; }));
         break;
       case 'addfiles':
-        asyncImportFiles(srv, data.payload);
-        send(null, {}, msg);
+        asyncImportFiles(srv, data.payload, msg);
         break;
       case 'deletefiles':
         data.payload.forEach(function(x) {
@@ -137,8 +137,7 @@ process.on('message', function(msg) {
       case 'init':
         _log(INFO, 'Init server');
         if (!data.payload.paths) { _log(WARNING, 'No files found for loading'); }
-        asyncImportFiles(srv, data.payload.paths || [])
-        send(null, {}, msg);
+        asyncImportFiles(srv, data.payload.paths || [], msg)
         break;
     }
   } catch (e) {
