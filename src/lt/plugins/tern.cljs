@@ -325,7 +325,9 @@
                           (.on worker "message" msg)
                           (.on worker "disconnect" dis)
                           (.on worker "exit" dis)
-                          (current-ws-jsfiles init-cb)
+                          (if (object/raise-reduce config :lazy-loading+ false)
+                            (init-cb nil [])
+                            (current-ws-jsfiles init-cb))
                           (object/merge! this {::worker worker})))))
 
 (behavior ::error
@@ -431,6 +433,11 @@
                         (when (files/file? path)
                           (object/update! this [:options :plugins] conj value)))))
 
+
+(behavior ::lazy-loading
+          :triggers #{:lazy-loading+}
+          :reaction (fn [this _ _]
+                      true))
 
 (object/object* ::tern.config
                 :tags #{:tern.config}

@@ -22,6 +22,11 @@ The default configuration for Tern is the browser environment `(:lt.plugins.tern
                        (:lt.plugins.tern/plugin :node true)]}
      :- {:tern.config [:lt.plugins.tern/libs]}}
 
+To setup a configuration for RequireJS:
+
+    {:+ {:tern.config [(:lt.plugins.tern/plugin :requirejs {:baseURL "/home/path/to/project/dir"})
+                       :lt.plugins.tern/lazy-loading]}}
+
 Arguments to `:lt.plugins.tern/libs` can be:
 
 1. One or many built in libs: `:ecma5 :browser :jquery :underscore`
