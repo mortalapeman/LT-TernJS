@@ -1,15 +1,18 @@
 var fs = require('fs'),
     path = require('path'),
     tern = require('tern'),
+    os = require('os'),
     module_dir = path.join(__dirname, '../node_modules/tern'),
     plugin_dir = path.join(module_dir, 'plugin'),
     defs_dir = path.join(module_dir, 'defs'),
     maxIdleTime = 6e4 * 5, // Shut down after five minutes of inactivity
     shutdown = setTimeout(doShutdown, maxIdleTime),
+    isWin = os.platform() === 'win32',
     DEBUG = false,
     INFO = "INFO",
     WARNING = "WARNING",
     ERROR = "ERROR";
+
 
 function doShutdown() {
   console.log("Was idle for " + Math.floor(maxIdleTime / 6e4) + " minutes. Shutting down.");
@@ -17,6 +20,7 @@ function doShutdown() {
 }
 
 function send(err, data, msg) {
+  msg = msg || {};
   var result = { data: {} };
   if (msg) {
     result.cb = msg.cb;
@@ -46,10 +50,10 @@ function loadLibs(paths) {
 function loadPlugins(paths) {
   if (!paths) { _log(INFO, 'No plugins loaded'); }
   var plugins = {};
-    (paths || []).forEach(function(x) {
-       require(x.path);
-       plugins[x.name] = x.opts;
-    });
+  (paths || []).forEach(function(x) {
+    require(x.path);
+    plugins[x.name] = x.opts;
+  });
   return plugins;
 }
 
@@ -66,10 +70,42 @@ function getServer(msg) {
     defs: loadLibs(msg.data.payload.config.libs),
     plugins: loadPlugins(msg.data.payload.config.plugins),
     getFile: function(x, cb) {
-      fs.readFile(x, {encoding: 'utf8'}, cb);
-    },
+      var path = x;
+      if (!isWin) {
+        path = '/' + x;
+      }
+      _log(INFO, "Attempting to load file", path);
+      fs.readFile(path, {encoding: 'utf8'}, cb);
+    }
   }));
 }
+
+var asyncImportFiles = (function() {
+  var cachedFiles = [],
+      count = 0,
+      nextFile;
+  function next(server, msg) {
+    nextFile = cachedFiles.pop();
+    if (nextFile) {
+      try {
+        server.addFile(nextFile);
+      } catch(e) {
+        _log(ERROR, "An error occured while loading file: ", {file: nextFile});
+        send(e);
+      }
+      count++;
+      setTimeout(function() { next(server);}, 0);
+      return;
+    }
+    send(null, {}, msg);
+    _log(INFO, "Finished loading files", {time: new Date(), count: count });
+  }
+  return function(server, files, msg) {
+    _log(INFO, "Start loading files: ", {startTime: new Date(), fileCount: files.length});
+    cachedFiles = cachedFiles.concat(files);
+    next(server, msg);
+  };
+}());
 
 
 var currentmsg;
@@ -82,15 +118,15 @@ process.on('message', function(msg) {
         data = msg.data || {};
     switch(data.type) {
       case 'request':
+        _log(INFO, "Received message", data.payload);
         srv.request(data.payload, function(e, out) {
+          _log(INFO, "Sending message", out);
           send(e, out, msg);
         });
+        _log(INFO, "Server files", srv.files.map(function(x) { return x.name; }));
         break;
       case 'addfiles':
-        data.payload.forEach(function(x) {
-          srv.addFile(x);
-        });
-        send(null, {}, msg);
+        asyncImportFiles(srv, data.payload, msg);
         break;
       case 'deletefiles':
         data.payload.forEach(function(x) {
@@ -101,17 +137,14 @@ process.on('message', function(msg) {
       case 'init':
         _log(INFO, 'Init server');
         if (!data.payload.paths) { _log(WARNING, 'No files found for loading'); }
-        (data.payload.paths || []).forEach(function(x) {
-          srv.addFile(x);
-        });
-        send(null, {}, msg);
+        asyncImportFiles(srv, data.payload.paths || [], msg)
         break;
     }
   } catch (e) {
     // Tern throws Syntax errors for unterminated block comments
     if (e instanceof SyntaxError) return;
     send(e, {}, currentmsg);
-    doShutdown()
+    doShutdown();
   }
 });
 

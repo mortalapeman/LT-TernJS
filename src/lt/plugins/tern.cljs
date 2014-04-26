@@ -325,7 +325,9 @@
                           (.on worker "message" msg)
                           (.on worker "disconnect" dis)
                           (.on worker "exit" dis)
-                          (current-ws-jsfiles init-cb)
+                          (if (object/raise-reduce config :lazy-loading+ false)
+                            (init-cb nil [])
+                            (current-ws-jsfiles init-cb))
                           (object/merge! this {::worker worker})))))
 
 (behavior ::error
@@ -432,6 +434,11 @@
                           (object/update! this [:options :plugins] conj value)))))
 
 
+(behavior ::lazy-loading
+          :triggers #{:lazy-loading+}
+          :reaction (fn [this _ _]
+                      true))
+
 (object/object* ::tern.config
                 :tags #{:tern.config}
                 :options {:libs #{}
@@ -499,7 +506,9 @@
                         (object/merge! editor {::token token})
                         (object/raise editor :editor.javascript.hints.update!))
                       (if-let [js-hints (::hints @editor)]
-                        js-hints
+                        (if (empty? js-hints)
+                          (:lt.plugins.auto-complete/hints @editor)
+                          js-hints)
                         ;; If tern hasn't responded with hints, we still need to return something or else
                         ;; the autocomplete box will be inactive when a response comes from the server.
                         (:lt.plugins.auto-complete/hints @editor))))
@@ -553,6 +562,13 @@
 ;; Jump to definition
 ;;****************************************************
 
+(def platform (.platform (js/require "os")))
+
+(defn requirejs-fix [f]
+  (if (and (not (files/exists? f)) (not= "win32" platform))
+    (files/join "/" f)
+    f))
+
 (behavior ::jump-to-definition
           :triggers #{:editor.jump-to-definition-at-cursor!}
           :reaction (fn [editor]
@@ -561,7 +577,7 @@
                                  (object/raise lt.objs.jump-stack/jump-stack
                                                :jump-stack.push!
                                                editor
-                                               (.-file data)
+                                               (requirejs-fix (.-file data))
                                                (.-start data)))]
                         (clients/send tern-client :request req :only cb))))
 
