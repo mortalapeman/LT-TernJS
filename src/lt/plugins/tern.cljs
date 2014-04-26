@@ -562,6 +562,13 @@
 ;; Jump to definition
 ;;****************************************************
 
+(def platform (.platform (js/require "os")))
+
+(defn requirejs-fix [f]
+  (if (and (not (files/exists? f)) (not= "win32" platform))
+    (files/join "/" f)
+    f))
+
 (behavior ::jump-to-definition
           :triggers #{:editor.jump-to-definition-at-cursor!}
           :reaction (fn [editor]
@@ -570,7 +577,7 @@
                                  (object/raise lt.objs.jump-stack/jump-stack
                                                :jump-stack.push!
                                                editor
-                                               (.-file data)
+                                               (requirejs-fix (.-file data))
                                                (.-start data)))]
                         (clients/send tern-client :request req :only cb))))
 
