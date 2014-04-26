@@ -499,7 +499,9 @@
                         (object/merge! editor {::token token})
                         (object/raise editor :editor.javascript.hints.update!))
                       (if-let [js-hints (::hints @editor)]
-                        js-hints
+                        (if (empty? js-hints)
+                          (:lt.plugins.auto-complete/hints @editor)
+                          js-hints)
                         ;; If tern hasn't responded with hints, we still need to return something or else
                         ;; the autocomplete box will be inactive when a response comes from the server.
                         (:lt.plugins.auto-complete/hints @editor))))
