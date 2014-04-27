@@ -13,7 +13,6 @@ var fs = require('fs'),
     WARNING = "WARNING",
     ERROR = "ERROR";
 
-
 function doShutdown() {
   console.log("Was idle for " + Math.floor(maxIdleTime / 6e4) + " minutes. Shutting down.");
   process.exit();
@@ -57,6 +56,7 @@ function loadPlugins(paths) {
   return plugins;
 }
 
+
 var server;
 function getServer(msg) {
   if (server) { return server; }
@@ -65,26 +65,27 @@ function getServer(msg) {
     throw new Error("Server not started and on init message received");
   }
   _log(INFO, 'Creating new tern server', msg);
-  return (server = new tern.Server({
+  server = new tern.Server({
     async: true,
     defs: loadLibs(msg.data.payload.config.libs),
     plugins: loadPlugins(msg.data.payload.config.plugins),
     getFile: function(x, cb) {
       var path = x;
-      if (!isWin) {
+      if (!isWin && path && path[0] !== '/') {
         path = '/' + x;
       }
       _log(INFO, "Attempting to load file", path);
       fs.readFile(path, {encoding: 'utf8'}, cb);
     }
-  }));
+  });
+  return server;
 }
 
 var asyncImportFiles = (function() {
   var cachedFiles = [],
       count = 0,
       nextFile;
-  function next(server, msg) {
+  function next(server) {
     nextFile = cachedFiles.pop();
     if (nextFile) {
       try {
@@ -97,13 +98,12 @@ var asyncImportFiles = (function() {
       setTimeout(function() { next(server);}, 0);
       return;
     }
-    send(null, {}, msg);
     _log(INFO, "Finished loading files", {time: new Date(), count: count });
   }
-  return function(server, files, msg) {
+  return function(server, files) {
     _log(INFO, "Start loading files: ", {startTime: new Date(), fileCount: files.length});
     cachedFiles = cachedFiles.concat(files);
-    next(server, msg);
+    next(server);
   };
 }());
 
@@ -126,7 +126,8 @@ process.on('message', function(msg) {
         _log(INFO, "Server files", srv.files.map(function(x) { return x.name; }));
         break;
       case 'addfiles':
-        asyncImportFiles(srv, data.payload, msg);
+        asyncImportFiles(srv, data.payload);
+        send(null, {}, msg);
         break;
       case 'deletefiles':
         data.payload.forEach(function(x) {
@@ -137,7 +138,8 @@ process.on('message', function(msg) {
       case 'init':
         _log(INFO, 'Init server');
         if (!data.payload.paths) { _log(WARNING, 'No files found for loading'); }
-        asyncImportFiles(srv, data.payload.paths || [], msg)
+        asyncImportFiles(srv, data.payload.paths || []);
+        send(null, {}, msg);
         break;
     }
   } catch (e) {
