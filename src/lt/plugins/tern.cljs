@@ -1,5 +1,6 @@
 (ns lt.plugins.tern
-  (:require [lt.object :as object]
+  (:require [clojure.string :as string]
+            [lt.object :as object]
             [lt.objs.plugins :as plugins]
             [lt.objs.editor :as ed]
             [lt.objs.thread :as thread]
@@ -142,17 +143,21 @@
   {:type (name t)
    :payload d})
 
+(defn ed->path [editor]
+  (or (get-in @editor [:info :path]) "untitled"))
+
 (defn ed->query
   ([editor type]
    (ed->query editor type {}))
   ([editor type query-ops]
    (merge {:type (name type)
-           :file (get-in @editor [:info :path])
+           :file (ed->path editor)
            :end (ed/->cursor editor)}
           query-ops)))
 
+
 (defn ed->fullfile [editor]
-  {:name (get-in @editor [:info :path])
+  {:name (ed->path editor)
    :text (ed/->val editor)
    :type "full"})
 
@@ -206,13 +211,14 @@
 (defn ed->partfile [editor]
   (let [{:keys [from to]} (partial-range editor)
         offset-line (max 0 (:line from))]
-    {:name (get-in @editor [:info :path])
+    {:name (ed->path editor)
      :offsetLines offset-line
      :text (ed/range editor from to)
      :type "part"}))
 
 (defn ed->mime [editor]
-  (-> @editor :doc deref :mime))
+  (get-in @editor [:info :mime]))
+
 
 (defn ed->line-count [editor]
   (ed/line-count (ed/->cm-ed editor)))
@@ -320,13 +326,17 @@
                           (.on worker "message" msg)
                           (.on worker "disconnect" dis)
                           (.on worker "exit" dis)
-                          (current-ws-jsfiles init-cb)
+                          (if (object/raise-reduce config :lazy-loading+ false)
+                            (init-cb nil [])
+                            (current-ws-jsfiles init-cb))
                           (object/merge! this {::worker worker})))))
 
 (behavior ::error
           :triggers #{:error}
           :reaction (fn [this msg]
-                      (.error js/console (stack msg))))
+                      (when msg
+                        (.error js/console (or (stack msg)
+                                               (.-err msg))))))
 
 
 (behavior ::kill
@@ -363,6 +373,11 @@
           :reaction (fn [this]
                       (when (:connected @this)
                         (object/raise this :kill))))
+
+(behavior ::on-app-shutdown
+          :triggers #{:close!}
+          :reaction (fn [_]
+                      (cmd/exec! :tern.reset)))
 
 
 (object/object* ::tern.client
@@ -419,6 +434,11 @@
                         (when (files/file? path)
                           (object/update! this [:options :plugins] conj value)))))
 
+
+(behavior ::lazy-loading
+          :triggers #{:lazy-loading+}
+          :reaction (fn [this _ _]
+                      true))
 
 (object/object* ::tern.config
                 :tags #{:tern.config}
@@ -487,7 +507,9 @@
                         (object/merge! editor {::token token})
                         (object/raise editor :editor.javascript.hints.update!))
                       (if-let [js-hints (::hints @editor)]
-                        js-hints
+                        (if (empty? js-hints)
+                          (:lt.plugins.auto-complete/hints @editor)
+                          js-hints)
                         ;; If tern hasn't responded with hints, we still need to return something or else
                         ;; the autocomplete box will be inactive when a response comes from the server.
                         (:lt.plugins.auto-complete/hints @editor))))
@@ -517,17 +539,33 @@
 ;; Docs
 ;;****************************************************
 
+(defn format-doc [s]
+  (->> (string/split  (string/replace s "@" "\n@") "*")
+       (map string/trim)
+       (interpose "\n")
+       (apply str)
+       (string/triml)))
+
+
+(behavior ::javascript-format-doc
+          :triggers #{:format+}
+          :exclusive true
+          :reaction (fn [editor m]
+                      (update-in m [:doc] format-doc)))
+
 (behavior ::javascript-doc
           :triggers #{:editor.doc}
           :reaction (fn [editor]
                       (let [req (ed->req editor :type {:docs true :types true})
                             loc (ed/->cursor editor)
                             cb (fn [_ result]
-                                 (let [doc {:doc (.-doc result)
-                                            :args (.-type result)
-                                            :loc loc
-                                            :file (.-origin result)
-                                            :name (.-name result)}]
+                                 (let [doc (merge (object/raise-reduce editor :format+
+                                                                       {:doc (.-doc result)
+                                                                        :args (when (not= (.-name result) (.-type result))
+                                                                                (.-type result))
+                                                                        :name (.-name result)})
+                                                  {:loc loc
+                                                   :file (.-origin result)})]
                                    (object/raise editor :editor.javascript.doc doc)))]
                         (clients/send tern-client :request req :only cb))))
 
@@ -541,6 +579,13 @@
 ;; Jump to definition
 ;;****************************************************
 
+(def platform (.platform (js/require "os")))
+
+(defn requirejs-fix [f]
+  (if (and (not (files/exists? f)) (not= "win32" platform))
+    (files/join "/" f)
+    f))
+
 (behavior ::jump-to-definition
           :triggers #{:editor.jump-to-definition-at-cursor!}
           :reaction (fn [editor]
@@ -549,7 +594,7 @@
                                  (object/raise lt.objs.jump-stack/jump-stack
                                                :jump-stack.push!
                                                editor
-                                               (.-file data)
+                                               (requirejs-fix (.-file data))
                                                (.-start data)))]
                         (clients/send tern-client :request req :only cb))))
 
