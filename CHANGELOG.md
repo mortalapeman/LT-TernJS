@@ -1,8 +1,8 @@
 ### 0.1.6
 
-* FIX: Formating of JSDocs
+* FIX: Formatting of JSDocs
 * ADD: Support for lazy loading of AMD js files
-* ADD: Mininal support for lazy loading of files in general
+* ADD: Minimal support for lazy loading of files in general
 * FIX: Node process going to 100% CPU when loading many JS files
 * FIX: TernJS plugin not working with transient JS editor
 * FIX: Node process lives on past shutdown of Light Table
