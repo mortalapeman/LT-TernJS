@@ -1,5 +1,6 @@
 (ns lt.plugins.tern
-  (:require [lt.object :as object]
+  (:require [clojure.string :as string]
+            [lt.object :as object]
             [lt.objs.plugins :as plugins]
             [lt.objs.editor :as ed]
             [lt.objs.thread :as thread]
@@ -538,17 +539,33 @@
 ;; Docs
 ;;****************************************************
 
+(defn format-doc [s]
+  (->> (string/split  (string/replace s "@" "\n@") "*")
+       (map string/trim)
+       (interpose "\n")
+       (apply str)
+       (string/triml)))
+
+
+(behavior ::javascript-format-doc
+          :triggers #{:format+}
+          :exclusive true
+          :reaction (fn [editor m]
+                      (update-in m [:doc] format-doc)))
+
 (behavior ::javascript-doc
           :triggers #{:editor.doc}
           :reaction (fn [editor]
                       (let [req (ed->req editor :type {:docs true :types true})
                             loc (ed/->cursor editor)
                             cb (fn [_ result]
-                                 (let [doc {:doc (.-doc result)
-                                            :args (.-type result)
-                                            :loc loc
-                                            :file (.-origin result)
-                                            :name (.-name result)}]
+                                 (let [doc (merge (object/raise-reduce editor :format+
+                                                                       {:doc (.-doc result)
+                                                                        :args (when (not= (.-name result) (.-type result))
+                                                                                (.-type result))
+                                                                        :name (.-name result)})
+                                                  {:loc loc
+                                                   :file (.-origin result)})]
                                    (object/raise editor :editor.javascript.doc doc)))]
                         (clients/send tern-client :request req :only cb))))
 
