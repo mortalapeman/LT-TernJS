@@ -1,8 +1,13 @@
+### 0.1.7
+
+* FIX: Correctly handle nil doc string
+* FIX: Allow other plugins to extend auto-complete in concert with TernJS
+
 ### 0.1.6
 
-* FIX: Formating of JSDocs
+* FIX: Formatting of JSDocs
 * ADD: Support for lazy loading of AMD js files
-* ADD: Mininal support for lazy loading of files in general
+* ADD: Minimal support for lazy loading of files in general
 * FIX: Node process going to 100% CPU when loading many JS files
 * FIX: TernJS plugin not working with transient JS editor
 * FIX: Node process lives on past shutdown of Light Table
@@ -14,7 +19,7 @@
 
 ### 0.1.4
 
-* FIX: Incorrect plugin dependecy name (azmr)
+* FIX: Incorrect plugin dependency name (azmr)
 
 ### 0.1.3
 
