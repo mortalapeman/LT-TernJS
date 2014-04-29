@@ -14,7 +14,7 @@
 
 ### 0.1.4
 
-* FIX: Incorrect plugin dependecy name (azmr)
+* FIX: Incorrect plugin dependency name (azmr)
 
 ### 0.1.3
 
