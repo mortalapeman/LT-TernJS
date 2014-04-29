@@ -1,3 +1,8 @@
+### 0.1.7
+
+* FIX: Correctly handle nil doc string
+* FIX: Allow other plugins to extend auto-complete in concert with TernJS
+
 ### 0.1.6
 
 * FIX: Formatting of JSDocs
