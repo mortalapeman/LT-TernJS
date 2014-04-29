@@ -479,6 +479,11 @@
 ;; Autocomplete
 ;;****************************************************
 
+(defn extract-hints [editor]
+  (let [hints (::hints @editor)]
+    (when (and hints (not (empty? hints)))
+      hints)))
+
 (behavior ::trigger-update-hints
           :triggers #{:editor.javascript.hints.update!}
           :reaction (fn [editor]
@@ -506,13 +511,11 @@
                       (when (not= token (::token @editor))
                         (object/merge! editor {::token token})
                         (object/raise editor :editor.javascript.hints.update!))
-                      (if-let [js-hints (::hints @editor)]
-                        (if (empty? js-hints)
-                          (:lt.plugins.auto-complete/hints @editor)
-                          js-hints)
-                        ;; If tern hasn't responded with hints, we still need to return something or else
-                        ;; the autocomplete box will be inactive when a response comes from the server.
-                        (:lt.plugins.auto-complete/hints @editor))))
+                      (if (= "." token)
+                        (or (extract-hints editor)
+                            (apply conj hints (:lt.plugins.auto-complete/hints @editor)))
+                        (apply conj hints (or (extract-hints editor)
+                                              (:lt.plugins.auto-complete/hints @editor))))))
 
 
 (behavior ::line-change
