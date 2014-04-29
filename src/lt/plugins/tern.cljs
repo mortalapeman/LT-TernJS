@@ -543,11 +543,13 @@
 ;;****************************************************
 
 (defn format-doc [s]
-  (->> (string/split  (string/replace s "@" "\n@") "*")
-       (map string/trim)
-       (interpose "\n")
-       (apply str)
-       (string/triml)))
+  (if s
+    (->> (string/split  (string/replace s "@" "\n@") "*")
+         (map string/trim)
+         (interpose "\n")
+         (apply str)
+         (string/triml))
+    "?"))
 
 
 (behavior ::javascript-format-doc
