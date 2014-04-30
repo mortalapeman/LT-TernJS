@@ -69,13 +69,21 @@ function getServer(msg) {
     async: true,
     defs: loadLibs(msg.data.payload.config.libs),
     plugins: loadPlugins(msg.data.payload.config.plugins),
+    projectDir: "",
     getFile: function(x, cb) {
       var path = x;
       if (!isWin && path && path[0] !== '/') {
         path = '/' + x;
       }
-      _log(INFO, "Attempting to load file", path);
-      fs.readFile(path, {encoding: 'utf8'}, cb);
+      _log(INFO, 'Attempting to load file', path);
+      fs.exists(path, function(exists) {
+        if (exists) {
+          fs.readFile(path, {encoding: 'utf8'}, cb);
+        } else {
+          _log(WARNING, 'file does not exist, attempting to append ext', path);
+          fs.readFile(path + '.js', {encoding: 'utf8'}, cb);
+        }
+      });
     }
   });
   return server;
