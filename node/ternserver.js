@@ -9,12 +9,12 @@ var fs = require('fs'),
     shutdown = setTimeout(doShutdown, maxIdleTime),
     isWin = os.platform() === 'win32',
     DEBUG = false,
-    INFO = "INFO",
-    WARNING = "WARNING",
-    ERROR = "ERROR";
+    INFO = 'INFO',
+    WARNING = 'WARNING',
+    ERROR = 'ERROR';
 
 function doShutdown() {
-  console.log("Was idle for " + Math.floor(maxIdleTime / 6e4) + " minutes. Shutting down.");
+  console.log('Was idle for ' + Math.floor(maxIdleTime / 6e4) + ' minutes. Shutting down.');
   process.exit();
 }
 
@@ -37,7 +37,7 @@ function send(err, data, msg) {
 
 function _log(level, str, obj) {
   if (DEBUG) {
-    send(null, '[' + level + '] '+ str + (obj ? " : " + JSON.stringify(obj) : ""), { command: "log" });
+    send(null, '[' + level + '] '+ str + (obj ? ' : ' + JSON.stringify(obj) : ''), { command: 'log' });
   }
 }
 
@@ -60,22 +60,30 @@ function loadPlugins(paths) {
 var server;
 function getServer(msg) {
   if (server) { return server; }
-  _log(INFO, "getServer(msg) : ", msg.command);
+  _log(INFO, 'getServer(msg) : ', msg.command);
   if (msg.command !== 'init') {
-    throw new Error("Server not started and on init message received");
+    throw new Error('Server not started and on init message received');
   }
   _log(INFO, 'Creating new tern server', msg);
   server = new tern.Server({
     async: true,
     defs: loadLibs(msg.data.payload.config.libs),
     plugins: loadPlugins(msg.data.payload.config.plugins),
+    projectDir: "",
     getFile: function(x, cb) {
       var path = x;
       if (!isWin && path && path[0] !== '/') {
         path = '/' + x;
       }
-      _log(INFO, "Attempting to load file", path);
-      fs.readFile(path, {encoding: 'utf8'}, cb);
+      _log(INFO, 'Attempting to load file', path);
+      fs.exists(path, function(exists) {
+        if (exists) {
+          fs.readFile(path, {encoding: 'utf8'}, cb);
+        } else {
+          _log(WARNING, 'file does not exist, attempting to append ext', path);
+          fs.readFile(path + '.js', {encoding: 'utf8'}, cb);
+        }
+      });
     }
   });
   return server;
@@ -91,17 +99,17 @@ var asyncImportFiles = (function() {
       try {
         server.addFile(nextFile);
       } catch(e) {
-        _log(ERROR, "An error occured while loading file: ", {file: nextFile});
+        _log(ERROR, 'An error occured while loading file: ', {file: nextFile});
         send(e);
       }
       count++;
       setTimeout(function() { next(server);}, 0);
       return;
     }
-    _log(INFO, "Finished loading files", {time: new Date(), count: count });
+    _log(INFO, 'Finished loading files', {time: new Date(), count: count });
   }
   return function(server, files) {
-    _log(INFO, "Start loading files: ", {startTime: new Date(), fileCount: files.length});
+    _log(INFO, 'Start loading files: ', {startTime: new Date(), fileCount: files.length});
     cachedFiles = cachedFiles.concat(files);
     next(server);
   };
@@ -118,12 +126,12 @@ process.on('message', function(msg) {
         data = msg.data || {};
     switch(data.type) {
       case 'request':
-        _log(INFO, "Received message", data.payload);
+        _log(INFO, 'Received message', data.payload);
         srv.request(data.payload, function(e, out) {
-          _log(INFO, "Sending message", out);
+          _log(INFO, 'Sending message', out);
           send(e, out, msg);
         });
-        _log(INFO, "Server files", srv.files.map(function(x) { return x.name; }));
+        _log(INFO, 'Server files', srv.files.map(function(x) { return x.name; }));
         break;
       case 'addfiles':
         asyncImportFiles(srv, data.payload);
@@ -150,8 +158,8 @@ process.on('message', function(msg) {
   }
 });
 
-process.on("SIGINT", function() { process.exit(); });
-process.on("SIGTERM", function() { process.exit(); });
+process.on('SIGINT', function() { process.exit(); });
+process.on('SIGTERM', function() { process.exit(); });
 process.on('uncaughtException', function (err) {
   send(err, {}, currentmsg);
 });
