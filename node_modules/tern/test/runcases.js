@@ -28,8 +28,17 @@ function getDefs(text) {
 
 function getPlugins(text) {
   var spec = /\/\/ plugin=(\w+)(?: (.*))?\n/g, m, plugins = {doc_comment: true};
-  while (m = spec.exec(text))
-    plugins[m[1]] = (m[2] && JSON.parse(m[2])) || (m[1] == "node" && {modules: nodeModules}) || {};
+  while (m = spec.exec(text)) {
+    if (m[2]) {
+      var options = JSON.parse(m[2]);
+      if (options)
+        plugins[m[1]] = options;
+      else
+        delete plugins[m[1]];
+    } else {
+      plugins[m[1]] = (m[1] == "node" && {modules: nodeModules}) || {};
+    }
+  }
   return plugins;
 }
 
@@ -56,20 +65,21 @@ function serverOptions(context, text) {
   };
 }
 
-exports.runTests = function(filter) {
-  var caseDir = util.resolve("test/cases") + "/";
+exports.runTests = function(filter, caseDir) {
+  caseDir = caseDir || util.resolve("test/cases");
   fs.readdirSync(caseDir).forEach(function(name) {
     if (filter && name.indexOf(filter) == -1) return;
 
-    util.addFile();
     var fname = name, context = caseDir;
     if (fs.statSync(path.resolve(context, name)).isDirectory()) {
       if (name == "node_modules" || name == "defs") return;
-      context += name + "/";
+      context = path.join(context, name);
       fname = "main.js";
     }
+    if (!/\.js$/.test(fname)) return;
+    util.addFile();
 
-    var text = fs.readFileSync(context + fname, "utf8"), m;
+    var text = fs.readFileSync(path.join(context, fname), "utf8"), m;
     var server = new tern.Server(serverOptions(context, text));
     server.addFile(fname);
     var ast = server.files[0].ast;
@@ -77,7 +87,7 @@ exports.runTests = function(filter) {
     if (m = text.match(/\/\/ loadfiles=\s*(.*)\s*\n/))
       m[1].split(/,\s*/g).forEach(function(f) {server.addFile(f);});
 
-    var typedef = /\/\/(<)?(\+|::?|:\?|doc:|loc:|refs:|exports:) *([^\r\n]*)/g;
+    var typedef = /\/\/(<)?(\+\??|::?|:\?|doc:|loc:|refs:|exports:|origin:) *([^\r\n]*)/g;
     function fail(m, str) {
       util.failure(name + ", line " + acorn.getLineInfo(text, m.index).line + ": " + str);
     }
@@ -85,7 +95,7 @@ exports.runTests = function(filter) {
     while (m = typedef.exec(text)) (function(m) {
       var args = m[3], kind = m[2], directlyHere = m[1];
       util.addTest();
-      if (kind == "+") { // Completion test
+      if (kind == "+" || kind == "+?") { // Completion test
         var columnInfo = /\s*@(\d+)$/.exec(args), pos = m.index;
         if (columnInfo) {
           var line = acorn.getLineInfo(text, m.index).line;
@@ -94,7 +104,7 @@ exports.runTests = function(filter) {
         } else {
           while (/\s/.test(text.charAt(pos - 1))) --pos;
         }
-        var query = {type: "completions", end: pos, file: fname, guess: false};
+        var query = {type: "completions", end: pos, file: fname, guess: kind == "+?"};
         var andOthers = /,\s*\.\.\.$/.test(args);
         if (andOthers) args = args.slice(0, args.lastIndexOf(","));
         var parts = args ? args.split(/\s*,\s*/) : [];
@@ -145,6 +155,9 @@ exports.runTests = function(filter) {
             else if (resp.start.line + 1 != line || resp.start.ch != col)
               fail(m, "Found definition at " + (resp.start.line + 1) + ":" + resp.start.ch +
                    " instead of expected " + line + ":" + col);
+          } else if (kind == "origin:") { // Origin finding test
+            if (resp.origin != args)
+              fail(m, "Found origin\n  " + resp.origin + "\ninstead of expected origin\n  " + args);
           } else if (kind == "refs:") { // Reference finding test
             var pos = /\s*(\d+),\s*(\d+)/g, mm;
             while (mm = pos.exec(args)) {
