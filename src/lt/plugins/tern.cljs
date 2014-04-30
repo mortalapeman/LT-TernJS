@@ -129,8 +129,10 @@
   (let [ws @workspace/current-ws
         ds (:folders ws)
         fs (filter jsfile? (:files ws))]
-    (async-filter-walk ds tern-ignore (fn [e r]
-                                        (done e (concat fs r))))))
+    (if (empty? (concat fs ds))
+      (done nil [])
+      (async-filter-walk ds tern-ignore (fn [e r]
+                                          (done e (concat fs r)))))))
 
 (defn dir->jsfiles [dir done]
   (async-filter-walk dir tern-ignore done))
