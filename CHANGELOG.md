@@ -1,3 +1,7 @@
+### 0.1.9
+
+* REV: Revert tern update to 0.6.2
+
 ### 0.1.8
 
 * FIX: Correctly initialize Tern when workspace is empty
