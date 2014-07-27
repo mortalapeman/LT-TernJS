@@ -31,35 +31,58 @@
 
 (def fs (js/require "fs"))
 
-(defn readdir [dir cb]
+(defn readdir  [dir cb]
+  "Accepts a string 'dir' and a callback function 'cb' of the form
+  (fn [err result]). Returns nil."
   (fs.readdir dir cb))
 
 (defn stat [path cb]
+  "Accepts a string 'path' and a callback function 'cb' of the form
+  (fn [err result]). Returns nil."
   (fs.stat path cb))
 
 (defn gitdir? [p]
+  "Accepts a string 'p'. Returns true if 'p' appears to be a git
+  repository."
   (= ".git" (files/basename p)))
 
 (defn svndir? [p]
+  "Accepts a string 'p'. Returns true if 'p' appears to be a
+  subversion directory."
   (= ".svn" (files/basename p)))
 
 (defn nodemoduledir? [p]
+  "Accepts a string 'p'. Returns true if 'p' appears to be a node
+  submodule directory."
   (= "node_modules" (files/basename p)))
 
 (defn jsfile? [p]
+  "Accepts a string 'p'. Retruns true if 'p' appears to be a javascript file."
   (boolean
    (re-find js-ext p)))
 
 (defn plugin-jsfile? [p]
+  "Accepts a string 'p'. Returns true if 'p' appears to be a Light Table plugin
+  file."
   (boolean
    (and (jsfile? p)
         (re-find #"_compiled" p))))
 
 (defmulti async-filter-walk
+  "Accepts any type 'arg', a function 'ignore?' of the form (fn [p stats]) and
+  a function 'done' of the form (fn [err result]). Return nil.
+
+  ignore? - Accepts a string 'p' and a file system stats object 'stats'. Returns
+  true if the 'p' should be ignored when walking the filesystem."
   (fn [arg ignore? done] (string? arg)))
 
 (defmethod async-filter-walk true
   [dir ignore? done]
+  "Accepts a string 'dir', a function 'ignore?' of the form (fn [p stats]) and
+  a function 'done' of the form (fn [err result]). Returns nil.
+
+  ignore? - Accepts a string 'p' and a file system stats object 'stats'. Returns
+  true if the 'p' should be ignored when walking the filesystem."
   (let [results (atom [])
         error (atom nil)
         handle-error (fn [e]
@@ -100,6 +123,11 @@
 
 (defmethod async-filter-walk false
   [dirs ignore? done]
+  "Accepts a collection strings 'dirs', a function 'ignore?' of the form
+  (fn [p stats]) and a function 'done' of the form (fn [err result]). Returns nil.
+
+  ignore? - Accepts a string 'p' and a file system stats object 'stats'. Returns
+  true if the 'p' should be ignored when walking the filesystem."
   (let [pending (atom (count dirs))
         results (atom [])
         error (atom nil)
@@ -118,6 +146,11 @@
       (async-filter-walk p ignore? cb))))
 
 (defn tern-ignore [p stats]
+  "Accepts a string 'p' and a file system stats object 'stats'. Returns true
+  if the path should be ignored when walking the file system for javascript files.
+
+  Ignores most version control and node modules directories. Attempts not to load
+  files that aren't javascript files or appear to be compiled Light Table plugins."
   (if (.isDirectory stats)
     (or (gitdir? p)
         (svndir? p)
@@ -126,6 +159,9 @@
         (not (jsfile? p)))))
 
 (defn current-ws-jsfiles [done]
+  "Accepts a callback 'done' of the form (fn [err result]). Returns nil.
+
+  Finds all the javascript files in the current workspace."
   (let [ws @workspace/current-ws
         ds (:folders ws)
         fs (filter jsfile? (:files ws))]
@@ -135,6 +171,11 @@
                                           (done e (concat fs r)))))))
 
 (defn dir->jsfiles [dir done]
+  "Accepts a 'string' dir and a callback function of the form
+  (fn [err result]). Returns nil.
+
+  Finds all the javascript files for a given directory. Ignores
+  version control and node module directories."
   (async-filter-walk dir tern-ignore done))
 
 ;;****************************************************
@@ -142,10 +183,14 @@
 ;;****************************************************
 
 (defn tern-msg [t d]
+  "Accepts a keyword/string 't' and any type 'd'. Returns a tern message of the form
+  {:type 't' :payload 'd'}."
   {:type (name t)
    :payload d})
 
 (defn ed->path [editor]
+  "Accepts an editor object 'editor'. Returns a string, the path to
+  the given editor's file."
   (or (get-in @editor [:info :path]) "untitled"))
 
 (defn ed->query
