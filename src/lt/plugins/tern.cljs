@@ -330,15 +330,19 @@
   "Accepts an editor object 'editor'. Returns the current mime type of 'editor'."
   (get-in @editor [:info :mime]))
 
-
 (defn ed->line-count [editor]
   "Accepts an editor object 'editor'. Returns the line count of the current editor."
   (ed/line-count (ed/->cm-ed editor)))
 
 (defn ed->req
   ([editor type]
+   "Accepts and editor object 'editor' and a keyword/string 'type'. Returns a
+   fully constructed map representation of a tern request for a single file."
    (ed->req editor type {}))
   ([editor type query-ops]
+   "Accepts and editor object 'editor', a keyword/string 'type' and a map
+   'query-ops'. Returns a fulling constructed map representation of a tern
+   request for a single file."
    (let [req {:query (ed->query editor type query-ops)
               :files [(if (> (ed->line-count editor) 250)
                         (ed->partfile editor)
