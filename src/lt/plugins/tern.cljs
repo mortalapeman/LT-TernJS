@@ -215,17 +215,6 @@
            :end (ed/->cursor editor)}
           query-ops)))
 
-
-(defn ed->fullfile [editor]
-  "Accepts an editor object 'editor'. Returns a entry map representing
-  a file for a tern request.
-
-  Captures the file in its entirety. Should only be used on smaller files
-  under 250 lines for performance reasons."
-  {:name (ed->path editor)
-   :text (ed/->val editor)
-   :type "full"})
-
 (defn indent [s]
   "Accepts a string 's'. Returns a count of whitespace characters at the
   begining of the string.
@@ -326,6 +315,16 @@
      :offsetLines offset-line
      :text (ed/range editor from to)
      :type "part"}))
+
+(defn ed->fullfile [editor]
+  "Accepts an editor object 'editor'. Returns a entry map representing
+  a file for a tern request.
+
+  Captures the file in its entirety. Should only be used on smaller files
+  under 250 lines for performance reasons."
+  {:name (ed->path editor)
+   :text (ed/->val editor)
+   :type "full"})
 
 (defn ed->mime [editor]
   "Accepts an editor object 'editor'. Returns the current mime type of 'editor'."
