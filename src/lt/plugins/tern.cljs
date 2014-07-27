@@ -127,7 +127,7 @@
   "Accepts a collection strings 'dirs', a function 'ignore?' of the form
   (fn [p stats]) and a function 'done' of the form (fn [err result]). Returns nil.
 
-  ignore? - Accepts a string 'p' and a file system stats object 'stats'. Returns
+  ignore?: Accepts a string 'p' and a file system stats object 'stats'. Returns
   true if the 'p' should be ignored when walking the filesystem."
   (let [pending (atom (count dirs))
         results (atom [])
@@ -196,8 +196,21 @@
 
 (defn ed->query
   ([editor type]
+   "Accepts an editor object 'editor' and a keyword/string 'type'. Returns
+   a map representing the query field of a tern request see [1] for more
+   information.
+
+   [1] http://ternjs.net/doc/manual.html#protocol."
    (ed->query editor type {}))
   ([editor type query-ops]
+   "Accepts an editor object 'editor', a keyword/string 'type' and a map
+   of extra query options 'query-ops'. Returns a map representing the
+   query field of a tern request see [1] for more information.
+
+   query-ops: A map of extra query fields that will be merged
+   with the final result.
+
+   [1] http://ternjs.net/doc/manual.html#protocol."
    (merge {:type (name type)
            :file (ed->path editor)
            :end (ed/->cursor editor)}
@@ -205,20 +218,38 @@
 
 
 (defn ed->fullfile [editor]
+  "Accepts an editor object 'editor'. Returns a entry map representing
+  a file for a tern request.
+
+  Captures the file in its entirety. Should only be used on smaller files
+  under 250 lines for performance reasons."
   {:name (ed->path editor)
    :text (ed/->val editor)
    :type "full"})
 
 (defn indent [s]
+  "Accepts a string 's'. Returns a count of whitespace characters at the
+  begining of the string.
+
+  Spaces and tabs are counted together."
   (->> (map #(re-find #"[ \t]" %) s)
-       (take-while (comp true? boolean))
+       (take-while identity)
        count))
 
 (defn jsfn? [s]
+  "Accepts a string 's'. Returns true of the string appears to contain
+  the start of a javascript function."
   (boolean
    (re-find #"function" s)))
 
 (defn back-search [strs max-indent]
+  "Accepts a collection of strings 'strs' and an integer 'max-indent'. Returns
+  a map with information about the next string with an indent one less than
+  'max-indent' if one exists, otherwise returns nil.
+
+  Used for the backwards search in partial-range. Searchs forward in the
+  collection for first instance of a line that is a javascript function and
+  has an indent level one less than 'max-indent'."
   (letfn [(line-info [i v]
                 {:index i
                  :indent (indent v)
@@ -230,6 +261,9 @@
          first)))
 
 (defn forward-search [strs max-indent]
+  "Accepts a collection of strings 'strs' and an integer 'max-indent'. Returns
+  a map with the index of a line with an indent one less that 'max-indent' if
+  one exists, otherwise returns nil."
   (letfn [(line-info [i v]
                      {:index i
                       :blockend? (>= max-indent (indent v))})]
@@ -239,24 +273,54 @@
          first)))
 
 (defn partial-range [editor]
-  (let [{:keys [line ch]} (ed/->cursor editor)
+  "Accepts and editor object 'editor'. Returns a map containing the line and
+  character information used to send a part of a file for a tern request."
+  (let [;; Find current cursor position
+        {:keys [line ch]} (ed/->cursor editor)
+
+        ;; Determine how far back we can search
         min-line (max 0 (- line 50))
+
+        ;; Determine how far forward we can search
         max-line (min (.lastLine (ed/->cm-ed editor)) (+ line 20))
+
+        ;; Grab the text for the search range.
         text (ed/range editor
                        {:line min-line :ch 0}
                        {:line max-line :ch 0})
+
+        ;; Split the text by new lines and partion into
+        ;; backward/forward search ranges.
         [b f] (partition-all (- line min-line) (.split text "\n"))
-        max-indent (indent (first f))
-        back-result (back-search (reverse b) max-indent)
+
+        ;; Find the indent of the current line.
+        current-indent (indent (first f))
+
+        ;; Find the furthest function declaration line back with
+        ;; one less than the current indent.
+        back-result (back-search (reverse b) current-indent)
+
+        ;; Get the index from our back search or use the maximum index from
+        ;; the current position.
         back-index (or (:index back-result) 49)
+
+        ;; Use the indent of the back result and attempt to find closing
+        ;; block.
         forward-index (or (:index (forward-search f (:indent back-result))) 20)
+
+        ;; Find last line of forward search or use end of file.
         to-line (min (+ line forward-index) max-line)]
     {:from {:line (max 0 (- line back-index 1))
             :ch 0}
      :to   {:line to-line
+
+            ;; If our to-line is the end of the file, use the character
+            ;; position from current cursor position
             :ch (if (= to-line max-line) ch 0)}}))
 
 (defn ed->partfile [editor]
+  "Accepts an editor object 'editor'. Returns a map respresenting a partial tern
+  file used for tern requests."
   (let [{:keys [from to]} (partial-range editor)
         offset-line (max 0 (:line from))]
     {:name (ed->path editor)
@@ -265,10 +329,12 @@
      :type "part"}))
 
 (defn ed->mime [editor]
+  "Accepts an editor object 'editor'. Returns the current mime type of 'editor'."
   (get-in @editor [:info :mime]))
 
 
 (defn ed->line-count [editor]
+  "Accepts an editor object 'editor'. Returns the line count of the current editor."
   (ed/line-count (ed/->cm-ed editor)))
 
 (defn ed->req
