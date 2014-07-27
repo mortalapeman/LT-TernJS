@@ -348,10 +348,10 @@
                         (ed->partfile editor)
                         (ed->fullfile editor))]}]
      (if-let [offset (-> req :files first :offsetLines)]
-       (tern-msg :request (-> req
-                              (update-in [:query :end :line] - offset)
-                              (assoc-in [:query :file] "#0")))
-       (tern-msg :request req)))))
+       ;; Reqests for partial files require some modification
+       (-> (update-in req [:query :end :line] - offset)
+           (assoc-in [:query :file] "#0"))
+       req))))
 
 ;;****************************************************
 ;; Message Helpers
@@ -603,7 +603,7 @@
 (behavior ::trigger-update-hints
           :triggers #{:editor.javascript.hints.update!}
           :reaction (fn [editor]
-                      (let [req (ed->req editor :completions)
+                      (let [req (tern-msg :request (ed->req editor :completions))
                             cb (fn [_ data]
                                  (object/raise editor :editor.javascript.hints.result data))]
                         (clients/send tern-client :request req :only cb))))
@@ -677,7 +677,7 @@
 (behavior ::javascript-doc
           :triggers #{:editor.doc}
           :reaction (fn [editor]
-                      (let [req (ed->req editor :type {:docs true :types true})
+                      (let [req (tern-msg :request (ed->req editor :type {:docs true :types true}))
                             loc (ed/->cursor editor)
                             cb (fn [_ result]
                                  (let [doc (merge (object/raise-reduce editor :format+
@@ -710,7 +710,7 @@
 (behavior ::jump-to-definition
           :triggers #{:editor.jump-to-definition-at-cursor!}
           :reaction (fn [editor]
-                      (let [req (ed->req editor :definition {:lineCharPositions true})
+                      (let [req (tern-msg :request (ed->req editor :definition {:lineCharPositions true}))
                             cb (fn [_ data]
                                  (object/raise lt.objs.jump-stack/jump-stack
                                                :jump-stack.push!
