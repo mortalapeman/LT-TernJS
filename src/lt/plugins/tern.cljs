@@ -359,6 +359,14 @@
 ;;****************************************************
 
 (defn id [msg]
+  "Accepts a message js object 'msg'. Returns the id field of the message if
+  found, otherwise returns nil.
+
+  Handles javascript repesentations of message objects from Light Tables
+  client system. Depending on the origin of the message, its id may be an
+  integer or a symbol encoded as a string. Messages send with callbacks
+  use a symbol encoded as a string. Messages sent without a callback use
+  the object's id for the callback lookup."
   (let [v (.-cb msg)]
     (cond
      (string? v) (symbol v)
@@ -366,31 +374,52 @@
      :else nil)))
 
 (defn id? [msg]
+  "Accepts a message js object 'msg'. Returns true if a callback id can be
+  found on the message."
   (boolean (id msg)))
 
 (defn err [msg]
+  "Accepts a message js object 'msg'. Returns an error object if found on
+  the message."
   (.-err msg))
 
 (defn err? [msg]
+  "Accepts a message js object 'msg'. Returns true if the message contains?
+  an error field."
   (boolean (err msg)))
 
 (defn command [msg]
+  "Accepts a message js object 'msg'. Returns the value of the command
+  field for 'msg'.
+
+  If a message sent with Light Table's client API does not specify a
+  callback, this command string is transformed to a keyword and used
+  as a behavior trigger."
   (.-command msg))
 
 (defn payload [msg]
+  "Accepts a message js object 'msg'. Returns the nested payload field of
+  the message if it exists, otherwise returns nil."
   (and (.-data msg) (.-payload (.-data msg))))
 
 (defn stack [msg]
+  "Accepts a message js object 'msg'. Returns stack field value of 'msg'."
   (.-stack msg))
 
 (defn init? [msg]
+  "Accepts a message js object 'msg'. Returns true if the message is an init
+  message."
   (and (not (id? msg))
        (= (command msg) "init")))
 
 (defn ignore? [msg]
+  "Accepts a message js object 'msg'. Returns true if the message was meant
+  only for it's side effects."
   (= (command msg) "ignore"))
 
 (defn log? [msg]
+  "Accepts a message js object 'msg'. Returns true if the message is a log
+  message."
   (= (command msg) "log"))
 
 ;;****************************************************
@@ -398,6 +427,7 @@
 ;;****************************************************
 
 (defn check-server-path []
+  "Returns true if we are able to find the ternserver javascript file."
   (let [exists (files/exists? ternserver-path)]
     (when-not exists
       (notifos/set-msg! (str "Could not find Tern server executable" file) {:class "error"}))
@@ -410,6 +440,10 @@
 
 (behavior ::send
           :triggers #{:send!}
+          :doc "Accepts a lt object 'this' and any type 'message'.
+
+          Sends the message to the tern worker associated with current object
+          as a plain old javascript object."
           :reaction (fn [this msg]
                       (.send (::worker @this)
                              (clj->js msg))))
@@ -441,7 +475,7 @@
                                      (log? m) (.log js/console (payload m))
                                      (ignore? m) nil
                                      (err? m) (object/raise this :error m)
-                                     (id? m) (object/raise this  :message  [(id m) (command m) (payload m)])
+                                     (id? m) (object/raise this :message  [(id m) (command m) (payload m)])
                                      (init? m) (do
                                                  (object/merge! this {:connecting false})
                                                  (notifos/done-working (str "Connected to: " (:name @this)))
@@ -508,6 +542,10 @@
 (object/object* ::tern.client
                 :tags #{:client :tern.client}
                 :name "Tern Javascript Server"
+                :connecting false
+                :connected false
+                :config nil
+                ::worker nil
                 :queue [])
 
 
