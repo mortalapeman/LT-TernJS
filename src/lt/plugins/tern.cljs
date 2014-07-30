@@ -16,9 +16,11 @@
             [lt.util.load :as load])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def plugin-dir (if-let [dir plugins/*plugin-dir*]
-                  dir
-                  (files/join plugins/user-plugins-dir "TernJS")))
+(def plugin-dir
+  (if-let [dir plugins/*plugin-dir*]
+    dir
+    (files/join plugins/user-plugins-dir "TernJS")))
+
 (def tern-dir (files/join plugin-dir "node_modules" "tern"))
 (def tern-lib-dir (files/join tern-dir "defs"))
 (def tern-plugin-dir (files/join tern-dir "plugin"))
@@ -542,6 +544,8 @@
 (object/object* ::tern.client
                 :tags #{:client :tern.client}
                 :name "Tern Javascript Server"
+
+                ;; Known fields provided for documentation
                 :connecting false
                 :connected false
                 :config nil
@@ -549,7 +553,15 @@
                 :queue [])
 
 
-(def tern-client (object/create ::tern.client))
+(defn tern-client-factory []
+  "Returns an object with the :tern.client tag by first looking to see if any
+  already exists. If none exist, creates a new lt object."
+  (if-let [obj (first (object/by-tag :tern.client))]
+    obj
+    (object/create ::tern.client)))
+
+
+(def tern-client (tern-client-factory))
 
 
 (cmd/command {:command :tern.send-current-document
