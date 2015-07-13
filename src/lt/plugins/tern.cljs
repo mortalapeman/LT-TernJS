@@ -8,6 +8,7 @@
             [lt.objs.clients.ws :as ws]
             [lt.objs.files :as files]
             [lt.objs.clients :as clients]
+            [lt.objs.platform :as platform]
             [lt.objs.editor.pool :as pool]
             [lt.objs.notifos :as notifos]
             [lt.objs.sidebar.command :as cmd]
@@ -288,6 +289,11 @@
       (notifos/set-msg! (str "Could not find Tern server executable" file) {:class "error"}))
     exists))
 
+(defn node-exe []
+  (if (platform/win?)
+    "/plugins/node/node.exe"
+    "/plugins/node/node"))
+
 (behavior ::send
           :triggers #{:send!}
           :reaction (fn [this msg]
@@ -303,9 +309,10 @@
                         (notifos/working (str "Connecting to: " (:name @this)))
                         (let [cp (js/require "child_process")
                               config (object/create ::tern.config)
-                              worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (thread/node-exe))
+                              worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (node-exe))
                                                                                       :silent true
-                                                                                      :env #js {:NODE_PATH (files/join plugin-dir "node_modules")}})
+                                                                                      :env #js {:NODE_PATH (files/join plugin-dir "node_modules")}
+                                                                                      :cwd files/pwd})
                               init-cb (fn [e paths]
                                         (if e
                                           (object/raise this :kill)
