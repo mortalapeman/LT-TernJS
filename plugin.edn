@@ -1,5 +1,5 @@
 {:name "TernJS"
- :version "0.1.9"
+ :version "0.1.10"
  :author "Eric Pritchett"
  :source "https://github.com/mortalapeman/LT-TernJS"
  :desc "Provides intelligent auto-complete, inline docs and jump to definition for JavaScript files in Light Table."
