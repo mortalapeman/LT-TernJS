@@ -435,11 +435,6 @@
       (notifos/set-msg! (str "Could not find Tern server executable" file) {:class "error"}))
     exists))
 
-(defn node-exe []
-  (if (platform/win?)
-    "/plugins/node/node.exe"
-    "/plugins/node/node"))
-
 (behavior ::send
           :triggers #{:send!}
           :doc "Accepts a lt object 'this' and any type 'message'.
@@ -459,7 +454,7 @@
                         (notifos/working (str "Connecting to: " (:name @this)))
                         (let [cp (js/require "child_process")
                               config (object/create ::tern.config)
-                              worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (files/lt-home (node-exe))
+                              worker (.fork cp ternserver-path #js ["--harmony"] #js {:execPath (.-executable js/process)
                                                                                       :silent true
                                                                                       :env #js {:NODE_PATH (files/join plugin-dir "node_modules")}
                                                                                       :cwd files/pwd})
